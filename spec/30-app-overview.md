@@ -28,6 +28,7 @@
 |UI                |**React Native Reusables** (shadcn для RN) поверх **NativeWind** + иконки **Lucide**|см. §5; готовый UI-кит, палитра через tweakcn (`global.css`), без хардкода стилей    |
 |Архитектура       |Компоненты + хуки; feature-based; «UI → data» через хуки-репозитории                |аналог MVVM: `Screen` (компонент) + `useXxxScreen()` (хук-«VM») + `UiState` (тип)    |
 |Навигация         |**React Navigation v7** (native-stack + bottom-tabs)                                |+ deep links (custom scheme) + Universal Links (iOS) / App Links (Android)           |
+|Диплинки/атрибуция|**Linkrunner** (`@linkrunner/react-native`)                                          |Единый вход из соц-сетей: установлено → курс сразу; не установлено → стор → установка → курс (deferred deep link). Fallback — собственное решение.|
 |Состояние         |**TanStack Query** (server state) + **Zustand** (ui/client state)                   |кэш запросов, инвалидация; нет глобального DI                                        |
 |Async             |Promises / async-await                                                              |через TanStack Query                                                                 |
 |Сеть/Бэкенд       |**supabase-js** (`@supabase/supabase-js`) + `react-native-url-polyfill`             |RPC через `.rpc()`, Edge через `.functions.invoke()`                                 |
