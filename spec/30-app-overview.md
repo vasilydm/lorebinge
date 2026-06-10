@@ -124,15 +124,17 @@ app/
     ├── features/                # экраны по фичам: Screen + хуки + UiState
     │   ├── splash/
     │   ├── auth/
-    │   ├── home/                # Home + блоки A–E
-    │   │   └── blocks/          # GridBlock, LoresBlock, InProgressBlock, ...
+    │   ├── home/                # Home + блоки Lores/In Progress/Popular/Categories
+    │   │   └── blocks/          # LoresBlock, InProgressBlock, PopularBlock, CategoriesBlock
+    │   ├── grid/                # вкладка Grid — инстаграм-сетка обложек курсов (§12.3б)
+    │   ├── category/            # список курсов одной категории (§12.3в)
     │   ├── coursepath/          # сетка уроков курса (карточки с обложками)
     │   ├── lesson/              # урок + раннер заданий
     │   │   └── tasks/           # VideoTask, ReadingTextTask, ReadingMediaTask, MatchingTask, FillBlankTask, ...
     │   ├── reward/              # маскот + награды
-    │   ├── quests/              # блок F (задания + встроенный магазин заморозки)
+    │   ├── quests/              # блоки QUESTS + SHOP — рендерятся во вкладке Profile (§12.7)
     │   ├── subscription/        # блок G + paywall
-    │   ├── profile/             # блок H + settings
+    │   ├── profile/             # вкладка Profile (ачивки + Quests + Shop) + settings
     │   │   └── settings/        # preferences, profile, course, linking, docs
     │   └── player/              # общий видео-плеер (пауза/перемотка) для видео-заданий
     ├── hud/                     # HUD-компонент (battery/diamonds/streak ↔ ассет подписки)

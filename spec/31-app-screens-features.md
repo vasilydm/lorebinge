@@ -147,6 +147,8 @@ export type AppResult<T> =
 ## 10. Навигация (граф маршрутов)
 
 > **React Navigation v7.** Root — native-stack; внутри — `BottomTab` с 4 вкладками, **каждая со своим вложенным native-stack** (сохранение back stack на вкладку). Параметры между экранами — **только id**. Тип-безопасность через `RootStackParamList`/`TabParamList`.
+>
+> **HUD + нижняя панель вкладок = постоянный каркас.** И HUD (сверху), и таб-бар (снизу) рендерятся на уровне `BottomTabs` (`main`) и видны на **всех** экранах вкладок, включая запушенные внутри них `course_path` и `category`. Корневые экраны `lesson`/`reward`/`paywall` лежат **над** `main` и перекрывают его целиком — пока открыт любой из них, HUD и таб-бар не видны (это и есть «полноэкранный» режим урока/награды/пейволла).
 
 ```
 RootStack (native-stack)
@@ -154,11 +156,17 @@ RootStack (native-stack)
 ├── auth (native-stack)
 │   ├── auth/login
 │   └── auth/register            (email + код подтверждения)
-├── main  (BottomTabs — 4 вкладки, каждая со своим native-stack)
-│   ├── home          (вкладка 1)
-│   ├── quests        (вкладка 2, блок F — задания + магазин заморозки)
+├── main  (BottomTabs — 4 вкладки; HUD сверху + таб-бар снизу = общий каркас)
+│   ├── home          (вкладка 1, native-stack)
+│   │   ├── home/feed                  (лента блоков: Lores, In Progress, Popular, Categories)
+│   │   ├── category/{categoryId}      (курсы одной категории)          — presentation: card
+│   │   └── course_path/{courseId}     (сетка уроков; HUD+таб-бар видны) — presentation: card
+│   ├── grid          (вкладка 2, native-stack)
+│   │   ├── grid/feed                  (инстаграм-сетка обложек курсов)
+│   │   └── course_path/{courseId}     (тот же экран курса)             — presentation: card
 │   ├── subscription  (вкладка 3, блок G)
-│   └── profile       (вкладка 4, блок H)
+│   └── profile       (вкладка 4, native-stack)
+│         ├── profile/main             (ачивки + Quests + Shop — встроенными блоками)
 │         └── settings
 │               ├── settings/preferences
 │               ├── settings/profile
@@ -168,13 +176,13 @@ RootStack (native-stack)
 │               ├── settings/send_feedback
 │               ├── settings/terms            (in-app)
 │               └── settings/privacy          (in-app)
-├── course_path/{courseId}        (сетка уроков; HUD виден)    — presentation: card
-├── lesson/{lessonId}             (раннер заданий; HUD скрыт) — fullScreenModal
-├── reward/{lessonId}             (маскот + награда)          — modal
-└── paywall                       (при battery=0 или из подписок) — modal
+├── lesson/{lessonId}             (раннер заданий; HUD+таб-бар скрыты) — fullScreenModal
+├── reward/{lessonId}             (маскот + награда; скрыты)           — fullScreenModal
+└── paywall                       (battery=0 или из подписок; скрыты)  — fullScreenModal
 ```
 
-> Магазин заморозки (бывший экран `shop`/блок J) не отдельный маршрут — встроен в экран `quests`.
+> **`course_path` и `category` — общие экраны вкладок.** Регистрируются в стеке каждой вкладки, откуда на них переходят (`course_path` — из `home` и `grid`; `category` — из `home`). Поэтому таб-бар и HUD остаются на месте, а возврат — стрелкой/жестом внутри стека вкладки (§10.1). Параметр — только `courseId`/`categoryId`.
+> **Quests и магазин заморозки** (бывшая вкладка 2 / экран `shop`) — **не отдельные маршруты**: оба встроены блоками (`QUESTS`, `SHOP`) в экран `profile` (§12.7, §12.10, §12.11).
 
 **Deep links / Universal Links (заложить структуру сразу, обе платформы):**
 
@@ -184,7 +192,7 @@ RootStack (native-stack)
   - **Android App Links:** `assetlinks.json` (Digital Asset Links) на домене + intent-filter (`autoVerify`).
 - Конфигурируется в React Navigation `linking` (`prefixes` + `config`); `scheme` и associated domains — в `app.config.ts` (`scheme`, `ios.associatedDomains`, `android.intentFilters`).
 
-**Скрытие HUD:** HUD — общий компонент, показывается на `home`, `course_path`; скрыт на `lesson`, `reward`, `paywall` (полноэкранное видео).
+**Видимость HUD и таб-бара.** Оба — части постоянного каркаса `main`: видны на всех экранах вкладок (`home`, `grid`, `subscription`, `profile`) и на запушенных внутри вкладок `course_path`/`category`. Скрыты только когда открыт корневой полноэкранный экран — `lesson`, `reward`, `paywall` (они перекрывают `main`).
 
 **HUD: батарея ↔ ассет подписки.** Слот заряда отображается по статусу подписки:
 
@@ -193,6 +201,29 @@ RootStack (native-stack)
 - Статус берётся из `subscriptions` (server-authoritative), кэш-фолбэк — последнее известное значение (MMKV).
 
 > **Safe area / системные жесты.** Все экраны учитывают инсеты (`react-native-safe-area-context`): нотч/Dynamic Island (iOS), системную навигацию-жестами (Android). Модальные экраны (`lesson`, `paywall`) — с корректной кнопкой/жестом закрытия на обеих платформах; на iOS свайп-вниз для модалок при необходимости отключается на `lesson` (чтобы не прерывать урок случайно).
+
+### 10.1 Возврат на предыдущий экран (навигация «назад»)
+
+> Как пользователь возвращается с экрана на предыдущий. Стек и аффордансы дают **штатные средства native-stack** React Navigation; собственный костыль-навигатор не пишем.
+
+**Кнопка «назад» (стрелка в хедере).** На **запушенных** экранах (не корни вкладок) сверху слева — иконка-стрелка **`ChevronLeft`** (Lucide, цвет — токен `foreground`), тап → `navigation.goBack()`. Применяется на:
+
+- `course_path/{courseId}` — назад на экран, откуда зашли (`home`-лента, `grid`-сетка или `category`);
+- `category/{categoryId}` (курсы категории) — назад на `home`;
+- `settings` и **все** его подэкраны (`settings/preferences`, `settings/profile`, `settings/course`, `settings/account_linking`, `settings/help_center`, `settings/send_feedback`, `settings/terms`, `settings/privacy`) — каждый возвращает на предыдущий уровень (подэкран → `settings` → `profile`).
+
+> Стрелка-назад и HUD не конфликтуют: на запушенных экранах вкладок (`course_path`, `category`, `settings/*`) HUD остаётся сверху, стрелка — отдельным элементом панели экрана слева (по дизайну кита). HUD скрыт только на корневых полноэкранных `lesson`/`reward`/`paywall`.
+
+**Корни вкладок** (`home`, `grid`, `subscription`, `profile`) — **без** стрелки-назад: это нижние точки своих стеков. Переключение между вкладками идёт через `BottomTab`, а **не** кладётся в общий back stack — у каждой вкладки свой стек сохраняется независимо (см. §10).
+
+**Системные жесты возврата (обе платформы):**
+
+- **iOS** — свайп от левого края экрана (встроенный `gestureEnabled` native-stack) эквивалентен тапу по стрелке. Отключается только там, где это специально оговорено (модалка `lesson`, см. §12.5в / safe-area-заметку выше).
+- **Android** — аппаратная/жестовая кнопка «Назад» вызывает тот же `goBack()` (обрабатывается React Navigation автоматически). На корне вкладки системный «Назад» уводит на вкладку `home`, с `home` — сворачивает приложение (стандартное поведение).
+
+**Корневые полноэкранные экраны** (`lesson`, `reward`, `paywall`) стрелки-назад **не имеют** — закрываются своими средствами (крестик ✕ с подтверждением для `lesson` — §12.5в; «Continue» для `reward` — §12.6; кнопка закрытия ✕ для `paywall`), а не через хедер-back.
+
+**Предупреждение о потере прогресса.** Любой путь возврата из `lesson` (стрелка отсутствует, но аппаратный «Назад» на Android / свайп там, где не отключён) проходит **через ту же подтверждающую плашку выхода**, что и крестик (§12.5в) — прямого «тихого» выхода с экрана урока нет, чтобы случайный «Назад» не сбросил прогон. На остальных экранах возврат без подтверждения (терять нечего).
 
 -----
 
@@ -209,25 +240,25 @@ RootStack (native-stack)
     {
       "id": "home", "icon": "home", "label_key": "nav_home", "enabled": true, "order": 1,
       "blocks": [
-        { "id": "grid",        "type": "GRID",        "enabled": true, "order": 1 },
-        { "id": "lores",       "type": "LORES",       "enabled": true, "order": 2 },
-        { "id": "in_progress", "type": "IN_PROGRESS", "enabled": true, "order": 3 },
-        { "id": "popular",     "type": "POPULAR",     "enabled": true, "order": 4 },
-        { "id": "categories",  "type": "CATEGORIES",  "enabled": true, "order": 5 }
+        { "id": "lores",       "type": "LORES",       "enabled": true, "order": 1 },
+        { "id": "in_progress", "type": "IN_PROGRESS", "enabled": true, "order": 2 },
+        { "id": "popular",     "type": "POPULAR",     "enabled": true, "order": 3 },
+        { "id": "categories",  "type": "CATEGORIES",  "enabled": true, "order": 4 }
       ]
     },
-    { "id": "quests", "icon": "quests", "label_key": "nav_quests", "enabled": true, "order": 2,
-      "blocks": [ { "id": "quests", "type": "QUESTS", "enabled": true, "order": 1 },
-                  { "id": "shop",   "type": "SHOP",   "enabled": true, "order": 2 } ] },
+    { "id": "grid", "icon": "grid", "label_key": "nav_grid", "enabled": true, "order": 2,
+      "blocks": [ { "id": "grid", "type": "GRID", "enabled": true, "order": 1 } ] },
     { "id": "subscription", "icon": "crown", "label_key": "nav_sub", "enabled": true, "order": 3,
       "blocks": [ { "id": "subscription", "type": "SUBSCRIPTION", "enabled": true, "order": 1 } ] },
     { "id": "profile", "icon": "profile", "label_key": "nav_profile", "enabled": true, "order": 4,
-      "blocks": [ { "id": "profile", "type": "PROFILE", "enabled": true, "order": 1 } ] }
+      "blocks": [ { "id": "profile", "type": "PROFILE", "enabled": true, "order": 1 },
+                  { "id": "quests",  "type": "QUESTS",  "enabled": true, "order": 2 },
+                  { "id": "shop",    "type": "SHOP",    "enabled": true, "order": 3 } ] }
   ]
 }
 ```
 
-> Магазин заморозки (`SHOP`) — блок **внутри вкладки Quests**, а не отдельная вкладка.
+> **Раскладка вкладок (RN9.1).** Блок `GRID` переехал с Home на **отдельную вкладку Grid** (инстаграм-сетка обложек, §12.3б); Home начинается с `LORES`. Вкладки `quests` больше нет — блоки `QUESTS` и `SHOP` встроены во вкладку **Profile** (§12.11). Иконка вкладки Grid — `grid` (Lucide `LayoutGrid`). Порядок вкладок: **Home · Grid · Subscription · Profile**.
 
 ### Клиентская реализация (RN)
 
@@ -258,10 +289,10 @@ RootStack (native-stack)
 
 ### 12.3 Home (вкладка 1)
 
-- **Назначение:** HUD сверху + лента блоков из конфига (A–E).
+- **Назначение:** лента блоков из конфига — **Lores, In Progress, Popular, Categories** (блок Grid переехал в отдельную вкладку, §12.3б). HUD и таб-бар — общий каркас (§10), не часть экрана.
 - **UiState:** `loading | content(blocksData) | error`.
 - **Данные:** один вызов `get_home_feed` (через TanStack Query).
-- **Действия:** тап обложки (Grid) или карточки (Lores/InProgress/Popular) → `course_path/{id}`; тап категории → список курсов категории.
+- **Действия:** тап карточки (Lores / In Progress / Popular) → `course_path/{id}`; тап плитки категории → `category/{categoryId}` (§12.3в).
 
 #### 12.3а Карточка Lores (Block B / `LoresBlock`) — детально
 
@@ -278,6 +309,26 @@ RootStack (native-stack)
 - **Действие:** тап по карточке или кнопке «Get the lore» → `course_path/{course_id}`.
 - **Состояния:** loading — skeleton-карточки; empty — «No lores yet»; ошибки изображений — placeholder (`expo-image`), не краш (см. A13).
 - Все надписи — английский, через i18n.
+
+#### 12.3б Grid (вкладка 2) — инстаграм-сетка обложек
+
+- **Назначение:** главный экран-витрина, особенно для **новопришедших из соцсетей**. Показывает обложки-превью **первых видео** всех опубликованных курсов единой сеткой — как вкладка Reels в Instagram. Пользователь, узнавший обложку ролика, который зацепил его в ленте, тапает её, чтобы «продолжить историю». Маркетинговая воронка (§1): ролик в соцсети → та же обложка в Grid → курс.
+- **Раскладка:** вертикальный бесконечный скролл, **3 колонки**, ячейки — **вертикальные** (портрет ~9:16), плотная сетка (минимальные/нулевые отступы, как Instagram). Ячейка = обложка курса (`cover_image_url` — кадр/постер первого видео курса), `expo-image` (кэш/blurhash/placeholder; ошибка → placeholder, не краш, A13).
+- **Одна ячейка = один курс.** Тап по ячейке → **`course_path/{course_id}`** (экран курса с карточками-уроками), **а не** проигрывание видео — само видео играется уже внутри урока.
+- **UiState:** `loading | content(items) | empty | error`.
+- **Данные:** `get_grid_feed` → список `{ course_id, cover_image_url, title }` по всем опубликованным курсам; порядок — `sort_order`/`popularity_score` (деталь UI-фазы).
+- **Состояния:** loading — skeleton-сетка; empty — «Nothing here yet»; error — ретрай. Все надписи — английский, i18n.
+
+> **Открытый вопрос (не блокирует):** делать ли Grid стартовой вкладкой для нового пользователя (сейчас splash → `home` для всех, §12.1).
+
+#### 12.3в Category (курсы одной категории)
+
+- **Назначение:** список курсов выбранной категории. Открывается тапом по плитке в блоке Categories на Home (§12.3). Пятый путь в курс наряду с Lores/In Progress/Popular/Grid.
+- **Раскладка:** заголовок = имя категории; ниже — вертикальный список/сетка карточек курсов (обложка `cover_image_url` + название + счётчики уроков/заданий — упрощённый вариант карточки Lores). Тап по карточке → `course_path/{course_id}`.
+- **UiState:** `loading | content(category, courses) | empty | error`.
+- **Данные:** `get_category_courses(category_id)` → `{ category:{id,name}, courses:[{id,title,cover_image_url,lessons_count,tasks_count}] }` (только `is_published`).
+- **Возврат:** стрелка-назад/жест → `home` (§10.1).
+- **Состояния:** empty — «No courses in this category yet»; error — ретрай. Все надписи — английский, i18n.
 
 ### 12.4 Course Path (сетка уроков курса)
 
@@ -365,10 +416,11 @@ RootStack (native-stack)
 - **Реакция маскота на качество заданий — управляется флагом из админки (`app_config.economy.mascot_tone_reaction_enabled`, дефолт `false`; B6.8).** Когда флаг `true` **и** в установленной сборке есть анимации обоих пулов: тон выбирается по числу неверных ответов (`errors_count`) — пул **celebrate** (0/мало неверных) или **encourage** (больше неверных), по 10 анимаций в каждом пуле, выбор случайный. Когда флаг `false` **или** анимации пулов отсутствуют в сборке → играет нейтральный пул (**мягкий откат**, без краша). Сейчас флаг выключен (анимации ещё не нарисованы). Счётчик `errors_count` пишется на сервере независимо от флага (§A6/A7), поэтому фичу можно включить тумблером, как только нужная сборка с анимациями доедет до пользователей — без правок бэкенда.
 - **Действие:** «Continue» → назад на `course_path` (следующая нода теперь `active`).
 
-### 12.7 Quests (вкладка 2, блок F) — *MVP, обязателен*
+### 12.7 Quests (блоки `QUESTS` + `SHOP` во вкладке Profile, бывшая вкладка 2) — *MVP, обязателен*
 
-- **Назначение:** задания Daily / Monthly / Exclusive → награда алмазами + **встроенный магазин** заморозки стрика.
-- **UiState:** `loading | content(daily, monthly, exclusive, shop) | error`.
+- **Размещение:** не отдельная вкладка/маршрут — **встроенные блоки внутри экрана Profile** (§12.11). Рендерятся как секции в ленте Profile; данные тянет свой хук, не зная о расположении (server-driven, §11).
+- **Назначение:** задания Daily / Monthly / Exclusive → награда алмазами + **встроенный магазин** заморозки стрика (блок `SHOP`, §12.10).
+- **Состояние блока:** `loading | content(daily, monthly, exclusive, shop) | error` (внутри общего UiState Profile).
 - **Данные:** `get_quests`.
 - **Действия:** забрать награду → `claim_quest_reward(quest_id)` (идемпотентно); покупка заморозки → `buy_streak_freeze(days)` (1/3/… дней); недостаток алмазов → понятное сообщение.
 
@@ -388,14 +440,17 @@ RootStack (native-stack)
 - **Триггер:** `battery=0` при попытке теста, или из Subscription. Открыт как `modal`.
 - **Контент:** зависит от `get_subscription_offer` — при `trial_available=true` «Buy subscription. First week — $0»; иначе обычная покупка. При `timer_active=true` — тот же персональный обратный отсчёт. Покупка — через RevenueCat (как 12.8).
 
-### 12.10 Shop (секция внутри Quests, бывший блок J)
+### 12.10 Shop (блок `SHOP` во вкладке Profile, бывший блок J)
 
-- **Не отдельный экран** — секция/блок `SHOP` внутри вкладки Quests (см. 12.7).
+- **Не отдельный экран** — блок `SHOP` рядом с блоком Quests во вкладке Profile (§12.7, §12.11).
 - Покупка заморозки стрика за алмазы (1/3/… дней) → `buy_streak_freeze(days)`. Это **внутренняя валюта (алмазы)**, не IAP — стор-биллинг не задействован.
 
-### 12.11 Profile (вкладка 4, блок H)
+### 12.11 Profile (вкладка 4)
 
-- Дубль HUD (level, streak, diamonds, battery); ачивки (костюмы/медали); шестерёнка ⚙️ вверху справа → `settings`.
+- **Назначение:** личный кабинет + центр заданий. Лента блоков (server-driven, §11): **`PROFILE`** (ачивки) → **`QUESTS`** (§12.7) → **`SHOP`** (§12.10). Шестерёнка ⚙️ вверху справа → `settings`.
+- **Блок `PROFILE`:** ачивки (костюмы/медали). **HUD не дублируется** — level/streak/diamonds/battery показывает общий HUD-каркас сверху (§10), он виден и здесь; отдельной копии в контенте экрана нет.
+- **UiState:** `loading | content(achievements, quests, shop) | error`.
+- **Данные:** ачивки — репозиторий профиля; квесты/магазин — `get_quests` (§12.7).
 
 ### 12.12 Settings и подразделы
 
@@ -440,5 +495,5 @@ RootStack (native-stack)
 
 **F13. Аналитика/краши.** AC: ключевые события логируются (lesson_completed, paywall_shown, subscription_started, streak_lost) на обеих платформах (Firebase Analytics); краши уходят в Crashlytics; **пойманные клиентские ошибки** (сетевые сбои, RPC-ошибки, ошибки покупок) репортятся через `crashlytics().recordError(e)`; **серверные ошибки** (Edge Functions, RPC) пишутся в таблицу `error_logs`.
 
-**F14. Quests + Магазин (блок F).** AC: вкладка Quests показывает задания daily/monthly/exclusive со статусом; награда за выполненный квест начисляется один раз (идемпотентно по леджеру `quest_reward`); встроенный магазин позволяет купить заморозку (1/3/… дней) через `buy_streak_freeze`; недостаток алмазов даёт понятную ошибку, баланс не уходит в минус; отдельной вкладки/маршрута `shop` нет.
+**F14. Quests + Магазин (блоки во вкладке Profile).** AC: блок Quests во вкладке Profile показывает задания daily/monthly/exclusive со статусом; награда за выполненный квест начисляется один раз (идемпотентно по леджеру `quest_reward`); встроенный магазин позволяет купить заморозку (1/3/… дней) через `buy_streak_freeze`; недостаток алмазов даёт понятную ошибку, баланс не уходит в минус; отдельных вкладок/маршрутов `quests`/`shop` нет.
 

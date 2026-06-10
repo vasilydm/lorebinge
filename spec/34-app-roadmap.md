@@ -39,8 +39,8 @@
 ### Phase 4 — Home + server-driven UI (F9)
 
 **Цель:** рабочий главный экран с лентой блоков.
-**Задачи:** рендерер блоков (раздел 11); встроенный `default_ui_config.json`; блоки A–E (Grid, Lores, In Progress, Popular, Categories) как независимые компоненты + их хуки; `get_home_feed`; нижняя навигация (4 вкладки) с сохранением состояния (вложенные стеки); HUD-компонент. Вкладка Quests — заглушка (наполняется в Phase 11).
-**AC:** см. F9; Home отображает блоки на обеих платформах; навигация сохраняет состояние; HUD виден на Home.
+**Задачи:** рендерер блоков (раздел 11); встроенный `default_ui_config.json`; блоки Home (Lores, In Progress, Popular, Categories) + **вкладка Grid** (инстаграм-сетка обложек, §12.3б) + экран `category` (§12.3в) как независимые компоненты + их хуки; `get_home_feed`, `get_grid_feed`, `get_category_courses`; нижняя навигация (**4 вкладки: Home · Grid · Subscription · Profile**) с сохранением состояния (вложенные стеки); **HUD + таб-бар как постоянный каркас** (`course_path`/`category` пушатся внутри стеков вкладок → каркас виден; скрыт только на корневых lesson/reward/paywall). Блоки Quests/Shop во вкладке Profile наполняются в Phase 11/12.
+**AC:** см. F9; Home (Lores/In Progress/Popular/Categories) и вкладка Grid отображаются на обеих платформах; тап в Grid-ячейке и по категории ведёт в курс; навигация сохраняет состояние; HUD и таб-бар видны на всех вкладках и на `course_path`/`category`, скрыты на lesson/reward/paywall.
 
 ### Phase 5 — Сетка уроков курса (F5 частично)
 
@@ -81,13 +81,13 @@
 ### Phase 11 — Quests + Магазин (блок F) (F14)
 
 **Цель:** вкладка заданий с алмазными наградами и встроенным магазином заморозки.
-**Задачи:** таблицы `quests`/`user_quests` в миграциях/сиде; RPC `get_quests`, `claim_quest_reward` (идемпотентно); экран `quests` (`features/quests`) с секциями Daily / Monthly / Exclusive и **секцией-магазином** (`SHOP`-блок) — покупка заморозки через `buy_streak_freeze`; обработка `INSUFFICIENT_DIAMONDS`/`QUEST_NOT_COMPLETED`; отдельного маршрута `shop` нет.
+**Задачи:** таблицы `quests`/`user_quests` в миграциях/сиде; RPC `get_quests`, `claim_quest_reward` (идемпотентно); **блоки `QUESTS` + `SHOP` во вкладке Profile** (§12.11, `features/quests` рендерится секциями Profile) с секциями Daily / Monthly / Exclusive и **магазином-блоком** (`SHOP`) — покупка заморозки через `buy_streak_freeze`; обработка `INSUFFICIENT_DIAMONDS`/`QUEST_NOT_COMPLETED`; отдельных маршрутов `quests`/`shop` нет.
 **AC:** см. F14 (+ F3 в части траты алмазов).
 
 ### Phase 12 — Профиль и настройки (F11)
 
 **Цель:** ЛК и все настройки.
-**Задачи:** Profile (дубль HUD, ачивки); Settings и подразделы (12.12): Preferences (MMKV + haptics), Profile-edit, Course-management, Account Linking (Google + Apple + Email), Documents (in-app), Support (Restore Subscription, управление подпиской в сторе, LOG OUT); `delete_account`.
+**Задачи:** Profile (ачивки + встроенные блоки Quests/Shop из Phase 11; **без дубля HUD** — level/streak/diamonds/battery даёт общий HUD-каркас, §10); Settings и подразделы (12.12): Preferences (MMKV + haptics), Profile-edit, Course-management, Account Linking (Google + Apple + Email), Documents (in-app), Support (Restore Subscription, управление подпиской в сторе, LOG OUT); `delete_account`.
 **AC:** см. F11.
 
 ### Phase 13 — Виджеты и локальные уведомления (F12)
