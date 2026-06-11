@@ -13,14 +13,15 @@ export interface UserProfile {
   id: string;
   username: string;
   displayName: string;
-  avatarUrl: string | null;
-  knowledgeLevel: number;
+  knowledgeLevel: number;             // HUD-уровень; +1 за каждые coursesPerLevel курсов (§12.0)
+  coursesCompleted: number;           // для прогресса до следующего уровня (дропдаун level, §12.0)
   diamonds: number;
   battery: number;
   batteryMax: number;
   isSubscriber: boolean;              // trial/active → батарея заменена ассетом
   subscriptionBadge: SubscriptionBadge | null;
 }
+// Аватара нет (убран из MVP, НЕКР-17).
 
 export interface SubscriptionBadge {
   assetUrl: string;
@@ -38,6 +39,7 @@ export interface Category { id: string; name: string; slug: string; }
 
 export interface Course {
   id: string;
+  slug: string;                       // человекочитаемый id для маркетинговых диплинков (§10, КРИТ-6)
   title: string;
   categoryId: string | null;
   categoryName: string | null;        // пилюля-категория на карточке Lores
@@ -57,7 +59,7 @@ export interface CourseProgress {
   courseId: string;
   lessonsCompleted: number;
   totalLessons: number;
-  lastLessonId: string | null;
+  // lastLessonId убран: карточка In Progress ведёт на course_path, не в урок (НЕКР-11/12)
 }
 export const courseFraction = (p: CourseProgress): number =>
   p.totalLessons === 0 ? 0 : p.lessonsCompleted / p.totalLessons;
@@ -119,12 +121,30 @@ export interface Subscription {
   expiresAt: number | null;           // epoch ms
 }
 
+// Точное соответствие app_config.economy (§6.4). Маппинг snake_case DTO → camelCase в репозитории.
+export interface LessonDiamondReward { amount: number; weight: number; }
+
+export interface TrialOffer {
+  trialEnabled: boolean;
+  trialDays: number;
+  timerEnabled: boolean;
+  timerDurationHours: number;
+  timerStartsOn: 'first_subscription_view' | 'install';
+}
+
 export interface EconomyConfig {
-  startingDiamonds: number; batteryMax: number;
-  batteryCostPerAnswer: number; batteryRefillMinutes: number; batteryRefillAmount: number;
-  lessonsWithoutErrorsForReward: number; diamondRewardAmount: number;
-  streakFreezeCostPerDay: number;
+  startingDiamonds: number;
+  batteryMax: number;
+  batteryCostPerAnswer: number;
+  batteryRewardPerLesson: number;
+  batteryRefillMinutes: number;
+  batteryRefillAmount: number;
+  lessonDiamondRewards: LessonDiamondReward[];   // взвешенный рандом за первое прохождение
+  lessonReplayDiamondReward: number;             // фикс за перепрохождение (дефолт 1, ВАЖН-15)
+  coursesPerLevel: number;                       // курсов на +1 knowledgeLevel (дефолт 5, §12.0)
+  streakFreezeCostPerDay: number;                // автосписание алмазов за пропущенный день (§A5)
   mascotToneReactionEnabled: boolean;
+  trialOffer: TrialOffer;                        // §A14
 }
 ```
 
@@ -166,7 +186,7 @@ RootStack (native-stack)
 │   │   └── course_path/{courseId}     (тот же экран курса)             — presentation: card
 │   ├── subscription  (вкладка 3, блок G)
 │   └── profile       (вкладка 4, native-stack)
-│         ├── profile/main             (ачивки + Quests + Shop — встроенными блоками)
+│         ├── profile/main             (Profile + Quests — встроенными блоками)
 │         └── settings
 │               ├── settings/preferences
 │               ├── settings/profile
@@ -182,15 +202,17 @@ RootStack (native-stack)
 ```
 
 > **`course_path` и `category` — общие экраны вкладок.** Регистрируются в стеке каждой вкладки, откуда на них переходят (`course_path` — из `home` и `grid`; `category` — из `home`). Поэтому таб-бар и HUD остаются на месте, а возврат — стрелкой/жестом внутри стека вкладки (§10.1). Параметр — только `courseId`/`categoryId`.
-> **Quests и магазин заморозки** (бывшая вкладка 2 / экран `shop`) — **не отдельные маршруты**: оба встроены блоками (`QUESTS`, `SHOP`) в экран `profile` (§12.7, §12.10, §12.11).
+> **Quests** (бывшая вкладка 2) — **не отдельный маршрут**: встроен блоком `QUESTS` в экран `profile` (§12.7, §12.11). **Магазина заморозки больше нет** (убран, КРИТ-8): заморозка стрика автоматическая за алмазы, отдельного блока/маршрута `shop` нет.
 
 **Deep links / Universal Links (заложить структуру сразу, обе платформы):**
 
-- Custom scheme: `lorebinge://course/{courseId}` → открывает `course_path/{courseId}`.
-- **HTTPS-ссылки для маркетинга:** `https://lorebinge.app/course/{id}` → тот же экран.
+> **Маркетинговые ссылки — по `slug`, внутренняя навигация — по `id` (КРИТ-6).** Внешняя ссылка содержит человекочитаемый `slug` курса (`bards-blood`), не uuid. В linking-конфиге описывается резолв `slug → id`: прямой `select id from courses where slug = ...` (RLS read разрешён), затем переход на `course_path/{id}`. Внутри приложения между экранами по-прежнему передаётся только `id`.
+
+- Custom scheme: `lorebinge://course/{slug}` → резолв `slug→id` → открывает `course_path/{id}`.
+- **HTTPS-ссылки для маркетинга:** `https://lorebinge.app/course/{slug}` → тот же экран.
   - **iOS Universal Links:** файл `apple-app-site-association` на домене + Associated Domains entitlement (`applinks:lorebinge.app`).
   - **Android App Links:** `assetlinks.json` (Digital Asset Links) на домене + intent-filter (`autoVerify`).
-- Конфигурируется в React Navigation `linking` (`prefixes` + `config`); `scheme` и associated domains — в `app.config.ts` (`scheme`, `ios.associatedDomains`, `android.intentFilters`).
+- Конфигурируется в React Navigation `linking` (`prefixes` + `config` с функцией-резолвером `slug→id`); `scheme` и associated domains — в `app.config.ts` (`scheme`, `ios.associatedDomains`, `android.intentFilters`).
 
 **Видимость HUD и таб-бара.** Оба — части постоянного каркаса `main`: видны на всех экранах вкладок (`home`, `grid`, `subscription`, `profile`) и на запушенных внутри вкладок `course_path`/`category`. Скрыты только когда открыт корневой полноэкранный экран — `lesson`, `reward`, `paywall` (они перекрывают `main`).
 
@@ -199,6 +221,8 @@ RootStack (native-stack)
 - **Не-подписчик** (`subscriptions.status` ∈ `none`/`expired`/`cancelled`) → иконка батареи + счётчик `battery/battery_max`; цвет по токенам `batteryNormal`/`batteryLow` (красный при ≤3).
 - **Подписчик** (`trial`/`active`) → вместо батареи яркий **ассет из `app_config.subscription_badge`** (Rive/Lottie/SVG/PNG по `asset_type`, опц. `label`). Заряд скрыт.
 - Статус берётся из `subscriptions` (server-authoritative), кэш-фолбэк — последнее известное значение (MMKV).
+
+> **Полный состав HUD, интерактивность (тапы/дропдауны) и окно повышения уровня — каноном в §12.0.** Здесь — только подмена батарея↔ассет и видимость каркаса.
 
 > **Safe area / системные жесты.** Все экраны учитывают инсеты (`react-native-safe-area-context`): нотч/Dynamic Island (iOS), системную навигацию-жестами (Android). Модальные экраны (`lesson`, `paywall`) — с корректной кнопкой/жестом закрытия на обеих платформах; на iOS свайп-вниз для модалок при необходимости отключается на `lesson` (чтобы не прерывать урок случайно).
 
@@ -252,17 +276,16 @@ RootStack (native-stack)
       "blocks": [ { "id": "subscription", "type": "SUBSCRIPTION", "enabled": true, "order": 1 } ] },
     { "id": "profile", "icon": "profile", "label_key": "nav_profile", "enabled": true, "order": 4,
       "blocks": [ { "id": "profile", "type": "PROFILE", "enabled": true, "order": 1 },
-                  { "id": "quests",  "type": "QUESTS",  "enabled": true, "order": 2 },
-                  { "id": "shop",    "type": "SHOP",    "enabled": true, "order": 3 } ] }
+                  { "id": "quests",  "type": "QUESTS",  "enabled": true, "order": 2 } ] }
   ]
 }
 ```
 
-> **Раскладка вкладок (RN9.1).** Блок `GRID` переехал с Home на **отдельную вкладку Grid** (инстаграм-сетка обложек, §12.3б); Home начинается с `LORES`. Вкладки `quests` больше нет — блоки `QUESTS` и `SHOP` встроены во вкладку **Profile** (§12.11). Иконка вкладки Grid — `grid` (Lucide `LayoutGrid`). Порядок вкладок: **Home · Grid · Subscription · Profile**.
+> **Раскладка вкладок (RN9.1).** Блок `GRID` переехал с Home на **отдельную вкладку Grid** (инстаграм-сетка обложек, §12.3б); Home начинается с `LORES`. Вкладки `quests` больше нет — блок `QUESTS` встроен во вкладку **Profile** (§12.11). **Блока `SHOP` больше нет** (магазин убран, КРИТ-8). Иконка вкладки Grid — `grid` (Lucide `LayoutGrid`). Порядок вкладок: **Home · Grid · Subscription · Profile**.
 
 ### Клиентская реализация (RN)
 
-- **Реестр блоков:** `type BlockType = 'GRID' | 'LORES' | 'IN_PROGRESS' | 'POPULAR' | 'CATEGORIES' | 'QUESTS' | 'SUBSCRIPTION' | 'PROFILE' | 'SHOP'`.
+- **Реестр блоков:** `type BlockType = 'GRID' | 'LORES' | 'IN_PROGRESS' | 'POPULAR' | 'CATEGORIES' | 'QUESTS' | 'SUBSCRIPTION' | 'PROFILE'`. *(Блок `SHOP` удалён — магазин убран, КРИТ-8.)*
 - **Рендерер:** компонент `<RenderBlock type={...} />` мапит `BlockType` → соответствующий компонент через объект-словарь `Record<BlockType, React.ComponentType>`. Блок получает данные из своего хука, не зная о расположении.
 - Каждая вкладка рендерит свой список `blocks` (отсортированный, только `enabled`) в **`FlatList`** (ленивый рендер; ⟵ LazyColumn).
 - **Неизвестный `type`** (конфиг новее приложения) — пропускается без краха (`if (!registry[type]) return null`).
@@ -273,22 +296,43 @@ RootStack (native-stack)
 ## 12. Спецификации экранов
 
 > Формат: назначение · состояния UiState · ключевые действия. Каждый экран = `Screen` (компонент) + `useXxxScreen()` (хук) + `UiState` (тип). Списки — `FlatList`; жесты — Gesture Handler + Reanimated; картинки — `expo-image`; видео — `expo-video`; Rive — `rive-react-native`.
+>
+> **Все строки интерфейса — английский, через i18n** (`src/core/i18n/en.json`). Это сквозное правило (§3) — в подразделах ниже отдельно **не повторяется** (НЕКР-8).
+
+### 12.0 HUD (постоянный верхний каркас) — *канон*
+
+- **Назначение:** верхняя панель-каркас, видимая на всех вкладках и на `course_path`/`category` (видимость — §10). Не часть экрана-вкладки: рендерится на уровне `BottomTabs`.
+- **Состав (слева направо, фикс-порядок): `level` · `streak` · `diamonds` · `battery/ассет`.** Уровень в HUD **есть** (подтверждено, ВАЖН-3); §12.11 (Profile) HUD **не дублирует**.
+  - **level** — иконка уровня + число `knowledge_level`.
+  - **streak** — иконка огня + `current_streak`.
+  - **diamonds** — иконка алмаза + баланс.
+  - **battery/ассет** — батарея (не-подписчик) ↔ ассет подписки (подписчик); подмена и цвета — §10.
+- **Источник данных:** прямое чтение **своих** строк `profiles` + `streaks` через TanStack Query; инвалидация после мутаций RPC (`submit_task_attempt`, `complete_lesson`, `claim_quest_reward`, `refresh_user_state`). При старте/заходе значения актуализирует `refresh_user_state` (батарея + стрик, §8.1).
+- **Интерактивность (тап по элементам):**
+  - **Тап по `level`** → **выпадающее сверху окошко** (дропдаун): «Level N» + сколько курсов осталось пройти до следующего уровня (`coursesPerLevel − coursesCompleted % coursesPerLevel`) — прогресс-трекинг. Закрывается **тапом вне окошка**.
+  - **Тап по `diamonds`** → **ничего** (неинтерактивно).
+  - **Тап по `streak`** → ничего (неинтерактивно в MVP).
+  - **Тап по `battery`/ассету** → **выпадающее окошко с кнопкой**; по кнопке → переход на вкладку `subscription` (раздел подписок). Работает **независимо** от того, есть подписка или нет.
+  - **Все окошки-дропдауны** закрываются тапом вне их области (overlay-перехватчик).
+- **Повышение уровня (level-up):** при `complete_lesson` с `leveled_up=true` (каждые `coursesPerLevel` курсов, §A4) поверх всего показывается **полноэкранное окно** — как экран награды в конце урока, но с **другой анимацией** маскота и сообщением «Level up! You reached level N». Закрывается кнопкой `Continue`. (Это отдельный оверлей, не `reward`-экран.)
+- **UiState HUD:** часть состояния каркаса; при отсутствии данных — последнее кэшированное значение (MMKV), без блокировки экрана.
 
 ### 12.1 Splash
 
-- **Назначение:** Rive-анимация на цветном фоне; проверка сессии; загрузка конфига и economy. Нативный splash (`expo-splash-screen`) удерживается до готовности JS, затем — Rive-сплэш.
-- **Переход:** сессия есть → `main` (выбор стартовой вкладки — ниже); нет → `auth/login`. Сервер недоступен → заглушка с текстом «Service is temporarily unavailable. Please try again later.» (англ.) + кнопка Retry.
+- **Назначение:** Rive-анимация на цветном фоне; проверка сессии; загрузка конфига и economy; **проверка минимальной версии** (force-update, §A15). Нативный splash (`expo-splash-screen`) удерживается до готовности JS, затем — Rive-сплэш.
+- **Force-update (§A15):** после загрузки конфига сравнить `app_config.min_supported_build` с `nativeBuildVersion`; если сборка меньше → блокирующий экран «Please update the app» с кнопкой в стор (по платформе). Дефолт `min_supported_build=0` (выключено).
+- **Переход:** сессия есть → `main` (выбор стартовой вкладки — ниже); нет → `auth/login`. **Нет интернета на старте → заглушка** «Service is temporarily unavailable. Please try again later.» (англ.) + кнопка Retry (ВАЖН-4). Холодный старт **требует сети** (нужны данные ленты) — «Home на кэше» при отсутствии сети **не показываем**; встроенный `default_ui_config.json` страхует только отказ загрузки UI-конфига, когда сеть в целом есть (см. F9, §A11).
 - **Стартовая вкладка (холодный старт, без диплинка):** если у пользователя **нет ни одного завершённого урока** (серверный признак прогресса — напр. пустой `in_progress`/нет `user_lesson_progress.status=completed`) → стартуем на **Grid** (витрина-крючок для новичка, §12.3б); иначе → **Home**. После первого завершённого урока дефолт сам становится Home — признак серверный, самокорректируется и переживает переустановку (не локальный флаг).
 - **Диплинк имеет приоритет.** Любой переход из соц-сетей идёт через **Linkrunner** (`@linkrunner/react-native`) — единая ссылка на курс. Развилка — по факту установки приложения, а не по «новизне» пользователя:
-  - **Приложение установлено** → ссылка открывает приложение сразу на `course_path/{courseId}` (моментальный диплинк).
-  - **Не установлено** → ссылка ведёт в App Store / Google Play → после установки и **первого запуска** SDK Linkrunner отдаёт сохранённый `course_id` (отложенный диплинк) → переходим в `course_path/{courseId}`. «Первый запуск» здесь — лишь технический момент доставки атрибуции для ветки «не установлено», а не отдельный сценарий.
+  - **Приложение установлено** → ссылка (`lorebinge.app/course/{slug}`) резолвится `slug→id` → открывает `course_path/{id}` (моментальный диплинк, КРИТ-6).
+  - **Не установлено** → ссылка ведёт в App Store / Google Play → после установки и **первого запуска** SDK Linkrunner отдаёт сохранённый `slug` (отложенный диплинк) → резолв `slug→id` → переходим в `course_path/{id}`. «Первый запуск» здесь — лишь технический момент доставки атрибуции для ветки «не установлено», а не отдельный сценарий.
   - В обоих случаях переход в курс имеет наивысший приоритет — **выше выбора стартовой вкладки**. Если данных диплинка нет — обычная логика стартовой вкладки. Сервис можно заменить собственным решением без изменений в логике навигации.
 
 ### 12.2 Auth (login / register)
 
-- **Login:** кнопка «Continue with Google»; **на iOS обязательна** кнопка **«Sign in with Apple»** (Apple Guideline 4.8 — при наличии стороннего соц-входа); (опц.) email+password.
+- **Login:** кнопка «Continue with Google»; **на iOS обязательна** кнопка **«Sign in with Apple»** (Apple Guideline 4.8 — при наличии стороннего соц-входа); **email + пароль** (для аккаунтов с email-методом).
   - Google — `@react-native-google-signin/google-signin` (или Supabase OAuth); Apple — `expo-apple-authentication` → передача identity-token в `supabase.auth.signInWithIdToken`.
-- **Register (email-путь):** ввод email → код на почту → подтверждение. Соц-вход (Google/Apple) кода не требует.
+- **Register (email-путь):** **email + пароль + код подтверждения** (ВАЖН-5). Поток: ввод email и пароля → `supabase.auth.signUp({ email, password })` → код подтверждения на почту → ввод кода (email confirm). Соц-вход (Google/Apple) пароля и кода не требует. «Password» в Settings (§12.12) = смена пароля, доступна только аккаунтам с email-методом.
 - **UiState:** `idle | loading | error(message)`.
 - **Действие:** успешный вход → создаётся/находится `profiles` (стартовые алмазы) → `home`. Сессия Supabase сохраняется в `expo-secure-store` (Keychain/Keystore).
 
@@ -313,7 +357,6 @@ RootStack (native-stack)
 
 - **Действие:** тап по карточке или кнопке «Get the lore» → `course_path/{course_id}`.
 - **Состояния:** loading — skeleton-карточки; empty — «No lores yet»; ошибки изображений — placeholder (`expo-image`), не краш (см. A13).
-- Все надписи — английский, через i18n.
 
 #### 12.3б Grid (вкладка 2) — инстаграм-сетка обложек
 
@@ -322,7 +365,7 @@ RootStack (native-stack)
 - **Одна ячейка = один курс.** Тап по ячейке → **`course_path/{course_id}`** (экран курса с карточками-уроками), **а не** проигрывание видео — само видео играется уже внутри первого урока.
 - **UiState:** `loading | content(items) | empty | error`.
 - **Данные:** `get_grid_feed` → список `{ course_id, cover_image_url, title }` по всем опубликованным курсам, где `cover_image_url` — обложка первого урока курса; порядок — `sort_order`/`popularity_score` (деталь UI-фазы).
-- **Состояния:** loading — skeleton-сетка; empty — «Nothing here yet»; error — ретрай. Все надписи — английский, i18n.
+- **Состояния:** loading — skeleton-сетка; empty — «Nothing here yet»; error — ретрай.
 
 > **Стартовая вкладка новичка.** Пользователь **без завершённых уроков** попадает на Grid первым экраном (решает splash, §12.1); после первого завершённого урока дефолт — Home. Приход по диплинку из соц-сети ведёт сразу в курс, минуя этот выбор.
 
@@ -333,7 +376,7 @@ RootStack (native-stack)
 - **UiState:** `loading | content(category, courses) | empty | error`.
 - **Данные:** `get_category_courses(category_id)` → `{ category:{id,name}, courses:[{id,title,cover_image_url,lessons_count,tasks_count}] }` (только `is_published`).
 - **Возврат:** стрелка-назад/жест → `home` (§10.1).
-- **Состояния:** empty — «No courses in this category yet»; error — ретрай. Все надписи — английский, i18n.
+- **Состояния:** empty — «No courses in this category yet»; error — ретрай.
 
 ### 12.4 Course Path (сетка уроков курса)
 
@@ -345,25 +388,26 @@ RootStack (native-stack)
 **Состояния карточки (через токены `node-*`, §5.6; без хардкода цвета):**
 
 1. **`completed` (пройден).** Обложка в **обычном (полном) цвете**, без бейджей и значков — «прошли и прошли». Тап → можно перепройти урок (`lesson/{id}`).
-1. **`active` (текущий).** Обложка в полном цвете + **пульсация** (Reanimated 3 — `withRepeat(withTiming(...))` по `scale`/свечению; токен `node-active`). Пульсирует **только одна** активная карточка. **A11y-фолбэк:** при включённом «уменьшении движения» (`useReducedMotion()`) пульс не запускается — вместо него статичная рамка/кольцо `node-active`, чтобы текущий урок отличался от пройденного и на статичном экране. Тап → `lesson/{id}`.
+1. **`active` (текущий).** Обложка в полном цвете + **пульсация** (Reanimated — `withRepeat(withTiming(...))` по `scale`/свечению; токен `node-active`). Пульсирует **только одна** активная карточка. **A11y-фолбэк:** при включённом «уменьшении движения» (`useReducedMotion()`) пульс не запускается — вместо него статичная рамка/кольцо `node-active`, чтобы текущий урок отличался от пройденного и на статичном экране. Тап → `lesson/{id}`.
 1. **`locked` (будущий).** Поверх обложки — **нежёсткий desaturate-overlay** (обложку по-прежнему видно; `opacity` карточки **не меняем**). Внизу справа — иконка **`Lock`** (Lucide), наложена **прямо на слой обложки** (без кружка, без обводки, без подложки; цвет — токен `node-locked`/`muted`). **Неинтерактивна:** тап ничего не делает (не ведёт в урок).
 
-- **Действия:** тап `active` → `lesson/{id}`; тап `completed` → `lesson/{id}` (перепрохождение); тап `locked` → нет реакции.
+- **Действия:** тап `active` → `lesson/{id}`; тап `completed` → `lesson/{id}` (перепрохождение); тап `locked` → нет реакции. **Кнопки «Restart» нет:** перепрохождение — это повторный заход в уже `completed`-урок; он даёт меньшую награду (`lesson_replay_diamond_reward`, §12.6/ВАЖН-15).
 - **Состояния экрана:** loading — skeleton-сетка; empty — «No lessons yet»; error — ретрай. Ошибки изображений — placeholder (`expo-image`), не краш (A13).
-- Все надписи — английский, через i18n.
 
 ### 12.5 Lesson (раннер заданий)
 
 - **Назначение:** последовательное прохождение заданий; нижний HUD скрыт; вверху — **панель урока** (прогресс-бар + кнопка выхода), см. 12.5в. Экран открыт как `fullScreenModal`.
-- **UiState:** `loading | running(task, index, total) | finished | exitConfirm`.
-- **Нижняя кнопка задания** (овальная, см. 6.5а): `requires_check=true` → сначала **disabled с подписью-действием**, после действия — активная **«Done»** (нажатие запускает проверку). `requires_check=false` → **«Continue»** (для `reading_text` — только на последнем сегменте, для `reading_media`/`video` — сразу; см. 6.5б). Автопроверки нет. Кнопка не перекрывает текст (§6.5в).
-- **Логика батарейки:** видео и чтение — бесплатно; тест (`requires_check=true`) — перед началом проверка `battery>0` (у не-подписчика), иначе → `paywall`. **Любой ответ** → `submit_task_attempt` → `battery -= 1` (сервер) → следующее задание. Серия верных подряд в курсе на порогах (5→+2, 10→+5 по дефолту) добавляет заряд; неверный ответ обнуляет серию. У подписчика батарея не тратится.
+- **При входе:** вызывается `start_lesson(lesson_id)` — сбрасывает `errors_count` текущего урока и лениво создаёт `user_course_progress` (§8.1, ВАЖН-1/ВАЖН-2).
+- **UiState:** `loading | running(task, index, total) | verdict | finished | exitConfirm`.
+- **Нижняя кнопка задания** (овальная; семантика `requires_check` — §6.5а): `requires_check=true` → сначала **disabled с подписью-действием**, после действия — активная **«Done»** (нажатие запускает проверку → вердикт, §12.5г). `requires_check=false` → **«Continue»** (для `reading_text` — только на последнем сегменте, для `reading_media`/`video` — сразу). Автопроверки нет.
+- **Раскладка кнопки (канон, перенесено из §6.5в, НЕКР-5):** кнопка `Continue`/`Done` **никогда не перекрывает текст**. Помещается текст — он целиком над кнопкой; длинный текст → область **скроллится** (`ScrollView`), кнопка зафиксирована снизу (абсолютная, над safe-area), у нижней кромки — **fade-out градиент** (`expo-linear-gradient`), не резкий обрыв. Учитывать нижний инсет на обеих платформах.
+- **Логика батарейки (плоская, §A4, КРИТ-1):** видео и чтение — бесплатно; тест (`requires_check=true`) — перед началом проверка `battery>0` (у не-подписчика), иначе → `paywall`. **Любой ответ** (верный/неверный) → `submit_task_attempt` → `battery −= battery_cost_per_answer` (сервер) → вердикт → следующее задание. **Внутриурочных бонусов и серий верных подряд нет** — бонус заряда (`battery_reward_per_lesson`) даётся только за завершение урока (§A4). У подписчика батарея не тратится.
 - **Видео-задание:** воспроизводится через **общий плеер** (`features/player`, `expo-video`) с тап-управлением — тап по центру = пауза/play, перемотка перетаскиванием по прогресс-полосе (Gesture Handler; см. F6). «Просмотрено» при ~95% длительности или ручном Continue → `submit_task_attempt(is_correct=true)`.
 - **Завершение:** прогресс-бар дошёл до конца → `complete_lesson` → `reward/{lessonId}` с результатом.
 
 #### 12.5в Верхняя панель урока: прогресс-бар и выход
 
-> Три элемента поверх раннера. Все надписи — английский, через i18n.
+> Три элемента поверх раннера.
 
 **1. Прогресс-бар урока (сверху).** Горизонтальная полоса, заполняется **по мере прохождения заданий**: `доля = пройдено / всего`. Каждое завершённое задание (Continue/Done) сдвигает полосу. Полоса считает **все** задания, включая видео.
 
@@ -397,7 +441,6 @@ RootStack (native-stack)
 - **Сегменты** — из `payload.segments[]`. Один сегмент = цельный текст без буллетов.
 - **Завершение:** «Continue» (на последнем сегменте) → следующее задание.
 - **Деградация:** битый `audio_url` → раздел как чисто текстовый (без краша); см. A13.
-- Все надписи — английский, i18n.
 
 #### 12.5б Задание `reading_media` (иллюстрированное чтение) — детально
 
@@ -408,31 +451,64 @@ RootStack (native-stack)
 1. **Нижняя панель** (`surface`, скруглённая сверху): **заголовок** → **текст разделов** (как в reading_text) → кнопка **«Continue»**.
 
 - **Кнопка «Continue» — всегда активна сразу** (в отличие от reading_text).
-- **Текст не перекрывается кнопкой (§6.5в):** кнопка зафиксирована снизу (абсолютная, над safe-area) и не наезжает на текст. Длинный текст → область скроллится (`ScrollView`), текст уходит **под** кнопку; у кнопки **fade-out градиент** (`expo-linear-gradient`).
+- **Текст не перекрывается кнопкой** (раскладка-канон — §12.5): кнопка зафиксирована снизу (абсолютная, над safe-area) и не наезжает на текст. Длинный текст → область скроллится (`ScrollView`), текст уходит **под** кнопку; у кнопки **fade-out градиент** (`expo-linear-gradient`).
 - **Аудио, разделы, деградация текста** — как в `reading_text` (12.5а), **кроме** появления кнопки (здесь сразу).
 - **Деградация медиа:** битая картинка → placeholder на месте медиа-области, экран не падает (A13).
 - **Рендерер:** `features/lesson/tasks/ReadingMediaTask` (переиспользует логику чтения из `ReadingTextTask`).
-- Все надписи — английский, i18n.
+
+#### 12.5г Вердикт после проверки (верно/неверно) — *канон, КРИТ-7*
+
+> Обратная связь на ответ в задании с проверкой (`requires_check=true`). Применяется после нажатия `Done` (`submit_task_attempt`).
+
+- **Подсветка ответа.** Выбранный вариант/ячейка подсвечивается токеном `success` (верно) или `error` (неверно). При ошибке дополнительно показывается **правильный ответ** (подсветкой правильного варианта).
+- **Баннер-плашка вердикта (снизу).** Появляется плашка: `Correct!` (токен `success`) или `Incorrect` + правильный ответ (токен `error`). Нижняя кнопка превращается в **`Continue`** → следующее задание.
+- **Одна попытка.** Повторных попыток нет — после вердикта идём дальше (согласуется с §A7). Батарея уже списана **за любой** ответ (§A4), верный он или нет.
+- **Хаптика и звук.** На вердикт — `expo-haptics` (success/error) и звук (если включены тумблеры, см. таблицу ниже). Управляются `Sound Effects` / `Vibration` из Preferences (§12.12).
+- **UiState:** `verdict` (между `running` и переходом к следующему заданию).
+
+**Таблица звук + хаптика (ВАЖН-14):**
+
+|Событие                  |Звук|Хаптика     |Примечание                                   |
+|-------------------------|----|------------|---------------------------------------------|
+|Верный ответ             |да  |success     |плашка `Correct!`                            |
+|Неверный ответ           |да  |error/warning|плашка `Incorrect` + правильный ответ        |
+|Завершение урока         |да  |success     |переход на `reward`                          |
+|Получение награды/алмазов |да  |light       |на экране `reward`                           |
+
+> **`Sound Effects`** (Preferences) управляет **только** этими эффект-звуками; **TTS-озвучка чтения под него не попадает** (TTS читается всегда, если есть `audio_url`). **`Vibration`** управляет всей хаптикой. Источник звуков — бандл-ассеты приложения (`expo-audio`).
+
+#### 12.5д Задание `matching` (сопоставление) — *канон, ВАЖН-12*
+
+> Два столбца (например «личность ↔ год рождения»). Цвета «правильно»/«неправильно» — из палитры (§5, токены `success`/`error`).
+
+- **Выбор пары.** Сначала тап по значению в **одном** столбце (любом — левом или правом) → элемент **подсвечивается** (выделение выбора). Затем тап по значению в **противоположном** столбце.
+- **Верная пара.** Оба значения **подсвечиваются одинаковым «правильным» цветом** (`success`), затем тухнут — превращаются в **серые неактивные кнопки** (из дальнейшего выбора исключены).
+- **Неверная пара.** Второе выбранное значение получает **«неправильный» цвет** (`error`), затем выделение снимается с обоих — оба снова доступны. Значение можно выбрать заново в паре с другим, чтобы собрать верную пару.
+- **Завершение.** Когда все пары собраны верно — нижняя кнопка активна (`Done`/`Continue`) → следующее задание.
+- **Рендерер:** `features/lesson/tasks/MatchingTask`.
 
 ### 12.6 Reward
 
-- **Назначение:** случайная Rive-анимация маскота + текст похвалы + (если есть) начисленные алмазы + разблокировка следующей ноды. Открыт как `modal`.
+- **Назначение:** случайная Rive-анимация маскота + текст похвалы + начисленные награды + разблокировка следующей ноды. Открыт как `modal`. Данные — из ответа `complete_lesson` (§8.1).
+- **Награды на экране (ВАЖН-15):** показываются **и алмазы, и заряд** — `+N 💎` и `+N заряда` (если `battery_awarded > 0`). **Перепрохождение** (`already_rewarded=true`): показывается только малая фикс-награда `lesson_replay_diamond_reward` (дефолт 1 💎) + маскот/похвала; заряд не показываем (его нет). Взвешенный рандом при повторе не разыгрывается.
+- **Завершение курса (ВАЖН-7):** при `course_completed=true` Reward-экран дополняется блоком **«Course completed!»** + показ нового `knowledge_level` (если `leveled_up`). Отдельного экрана празднования курса в MVP нет (кандидат пост-MVP). `Continue` → `course_path` (все карточки в полном цвете). Если одновременно `leveled_up=true` — поверх показывается окно level-up (§12.0).
 - **Текущее поведение анимации:** маскот играет случайную анимацию из **единого нейтрального пула** (без деления по качеству прохождения). **Урок как таковой не «провален/пройден»** (см. A7).
 - **Реакция маскота на качество заданий — управляется флагом из админки (`app_config.economy.mascot_tone_reaction_enabled`, дефолт `false`; B6.8).** Когда флаг `true` **и** в установленной сборке есть анимации обоих пулов: тон выбирается по числу неверных ответов (`errors_count`) — пул **celebrate** (0/мало неверных) или **encourage** (больше неверных), по 10 анимаций в каждом пуле, выбор случайный. Когда флаг `false` **или** анимации пулов отсутствуют в сборке → играет нейтральный пул (**мягкий откат**, без краша). Сейчас флаг выключен (анимации ещё не нарисованы). Счётчик `errors_count` пишется на сервере независимо от флага (§A6/A7), поэтому фичу можно включить тумблером, как только нужная сборка с анимациями доедет до пользователей — без правок бэкенда.
 - **Действие:** «Continue» → назад на `course_path` (следующая нода теперь `active`).
 
-### 12.7 Quests (блоки `QUESTS` + `SHOP` во вкладке Profile, бывшая вкладка 2) — *MVP, обязателен*
+### 12.7 Quests (блок `QUESTS` во вкладке Profile, бывшая вкладка 2) — *MVP, обязателен*
 
-- **Размещение:** не отдельная вкладка/маршрут — **встроенные блоки внутри экрана Profile** (§12.11). Рендерятся как секции в ленте Profile; данные тянет свой хук, не зная о расположении (server-driven, §11).
-- **Назначение:** задания Daily / Monthly / Exclusive → награда алмазами + **встроенный магазин** заморозки стрика (блок `SHOP`, §12.10).
-- **Состояние блока:** `loading | content(daily, monthly, exclusive, shop) | error` (внутри общего UiState Profile).
+- **Размещение:** не отдельная вкладка/маршрут — **встроенный блок внутри экрана Profile** (§12.11). Рендерится как секции в ленте Profile; данные тянет свой хук, не зная о расположении (server-driven, §11).
+- **Назначение:** задания Daily / Monthly / Exclusive → награда алмазами. **Магазина заморозки нет** (убран, КРИТ-8): заморозка стрика теперь автоматическая за алмазы (§A5).
+- **Состояние блока:** `loading | content(daily, monthly, exclusive) | error` (внутри общего UiState Profile).
 - **Данные:** `get_quests`.
-- **Действия:** забрать награду → `claim_quest_reward(quest_id)` (идемпотентно); покупка заморозки → `buy_streak_freeze(days)` (1/3/… дней); недостаток алмазов → понятное сообщение.
+- **Действия:** забрать награду → `claim_quest_reward(quest_id)` (идемпотентно); недостаток алмазов на другие операции → понятное сообщение.
 
 ### 12.8 Subscription (вкладка 3, блок G)
 
 - **Назначение:** карточки Super / Super Family (скруглённые блоки) + CTA подписки. Текст CTA и наличие бесплатной недели зависят от `get_subscription_offer` (§A14).
-- **Данные:** локальная цена и пакеты — из **RevenueCat `Offerings`/`Packages`** (стор сам знает страну/валюту); тексты — из `price_tiers` для отображения; **предложение** (`trial_available`, `timer_*`) — из `get_subscription_offer` (server-authoritative).
+- **Состояние для активного подписчика (`trial`/`active`, ВАЖН-8):** вместо CTA покупки — **бейдж активного плана** («You're Super» / «Super Family»), **дата** следующего списания/истечения (`expires_at`), кнопка **«Manage Subscription»** (ведёт в системные настройки стора — App Store/Play, как §12.12). Триал показывает «Trial until …» до `expires_at`. Кнопка апгрейда на Family — опционально (кандидат пост-MVP).
+- **Данные:** локальная цена и пакеты — из **RevenueCat `Offerings`/`Packages`** (стор сам знает страну/валюту); тексты — из `price_tiers` для отображения; **предложение** (`trial_available`, `timer_*`) — из `get_subscription_offer` (server-authoritative); статус и `expires_at` — из `subscriptions`.
 - **Условный CTA по предложению:**
   - `trial_available=true` → кнопка **«Try 1 week for $0»** (free-trial offer; на iOS — introductory offer, на Android — free-trial offer).
   - `trial_available=false` → кнопка обычной покупки (например **«Subscribe»** с ценой).
@@ -445,26 +521,25 @@ RootStack (native-stack)
 - **Триггер:** `battery=0` при попытке теста, или из Subscription. Открыт как `modal`.
 - **Контент:** зависит от `get_subscription_offer` — при `trial_available=true` «Buy subscription. First week — $0»; иначе обычная покупка. При `timer_active=true` — тот же персональный обратный отсчёт. Покупка — через RevenueCat (как 12.8).
 
-### 12.10 Shop (блок `SHOP` во вкладке Profile, бывший блок J)
+### 12.10 Shop — *удалён (КРИТ-8)*
 
-- **Не отдельный экран** — блок `SHOP` рядом с блоком Quests во вкладке Profile (§12.7, §12.11).
-- Покупка заморозки стрика за алмазы (1/3/… дней) → `buy_streak_freeze(days)`. Это **внутренняя валюта (алмазы)**, не IAP — стор-биллинг не задействован.
+> Магазин заморозки стрика убран целиком (глобальное решение ревизии). Заморозка теперь автоматическая: при пропуске дня сервер сам списывает алмазы (`streak_freeze_cost_per_day`, §A5). Блока `SHOP`, экрана `shop` и RPC `buy_streak_freeze` больше нет.
 
 ### 12.11 Profile (вкладка 4)
 
-- **Назначение:** личный кабинет + центр заданий. Лента блоков (server-driven, §11): **`PROFILE`** (ачивки) → **`QUESTS`** (§12.7) → **`SHOP`** (§12.10). Шестерёнка ⚙️ вверху справа → `settings`.
-- **Блок `PROFILE`:** ачивки (костюмы/медали). **HUD не дублируется** — level/streak/diamonds/battery показывает общий HUD-каркас сверху (§10), он виден и здесь; отдельной копии в контенте экрана нет.
-- **UiState:** `loading | content(achievements, quests, shop) | error`.
-- **Данные:** ачивки — репозиторий профиля; квесты/магазин — `get_quests` (§12.7).
+- **Назначение:** личный кабинет + центр заданий. Лента блоков (server-driven, §11): **`PROFILE`** (инфо профиля) → **`QUESTS`** (§12.7). Шестерёнка ⚙️ вверху справа → `settings`. *(Ачивок нет — убраны, ВАЖН-16; блока `SHOP` нет — убран, КРИТ-8.)*
+- **Блок `PROFILE`:** базовая информация профиля — `display_name` / `username` / `knowledge_level` (без аватара — убран, НЕКР-17). **HUD не дублируется** — level/streak/diamonds/battery показывает общий HUD-каркас сверху (§12.0), он виден и здесь; отдельной копии в контенте экрана нет.
+- **UiState:** `loading | content(profile, quests) | error`.
+- **Данные:** профиль — репозиторий профиля; квесты — `get_quests` (§12.7).
 
 ### 12.12 Settings и подразделы
 
 > Полная структура — concept 1.18а. Реализуется как список → подэкраны.
 
-- **Preferences:** Sound Effects / Vibration (Haptics) / Daily Practice Reminders (тумблеры, хранятся в MMKV; reminder включает локальное уведомление `expo-notifications`). Vibration → `expo-haptics` (кросс-платформенно).
-- **Profile:** Name / Username / Password / Email (редактирование) + кнопка **DELETE ACCOUNT** (→ `delete_account`; обязательно для Apple и Google).
+- **Preferences:** Sound Effects / Vibration (Haptics) / Daily Practice Reminders (тумблеры, хранятся в MMKV; reminder включает локальное уведомление `expo-notifications`). **`Sound Effects`** управляет эффект-звуками урока (НЕ TTS), **`Vibration`** — всей хаптикой — перечень событий в таблице §12.5г. Vibration → `expo-haptics` (кросс-платформенно).
+- **Profile:** Name / Username / Email + **Password** (редактирование) + кнопка **DELETE ACCOUNT** (→ `delete_account`; обязательно для Apple и Google). **`Password` = смена пароля** — пункт виден **только для аккаунтов с email-методом** (ВАЖН-5); для чистого соц-входа (только Google/Apple) пункт скрыт. Аватара нет (НЕКР-17).
 - **Course:** список начатых/завершённых курсов + удалить (→ `reset_course_progress`, с подтверждением).
-- **Account Linking:** тумблер Google + Apple (iOS) + статус Email; отвязка соц-входа требует предварительной привязки email (диалог). Нельзя отвязать единственный способ входа.
+- **Account Linking (ВАЖН-6):** тумблеры **Google** + **Apple** (iOS) + статус **Email**. Бэкенд — **Supabase Identity Linking** (manual linking включён в настройках проекта): привязка соц-метода → `supabase.auth.linkIdentity({ provider })`; отвязка → `supabase.auth.unlinkIdentity(identity)`. Привязка **email** к соц-аккаунту → `supabase.auth.updateUser({ email })` + подтверждение кодом. **Правило «нельзя отвязать единственный способ входа»** enforce-ится и в UI (кнопка отвязки задизейблена, если метод последний), и серверно (`unlinkIdentity` не удаляет последнюю identity). Отвязка соц-входа требует предварительной привязки email (диалог). Подробнее — §A16.
 - **Documents:** Terms / Privacy Policy (in-app, `react-native-webview` или нативный текст).
 - **Support:** Help Center / Send Feedback (in-app). Кнопки **Choose / Restore Subscription** (RevenueCat), **LOG OUT**. На iOS — ссылка «Manage Subscription» ведёт в системные настройки App Store; на Android — в Play подписки.
 
@@ -474,13 +549,13 @@ RootStack (native-stack)
 
 > Сжатый формат: **AC** = acceptance criteria. Тестовые требования вынесены в отдельный документ.
 
-**F1. Авторизация.** AC: вход через Google создаёт профиль с 300 алмазами; **на iOS доступен «Sign in with Apple»**; сессия сохраняется (шифрованно, secure-store) и переживает перезапуск на обеих платформах; logout очищает сессию; email-регистрация требует код подтверждения.
+**F1. Авторизация.** AC: вход через Google создаёт профиль с 300 алмазами; **на iOS доступен «Sign in with Apple»**; сессия сохраняется (шифрованно, secure-store) и переживает перезапуск на обеих платформах; logout очищает сессию; **email-регистрация = email + пароль + код подтверждения** (`signUp` + email confirm, ВАЖН-5); пункт «Password» в Settings виден только для email-аккаунтов; Account Linking — через Supabase `linkIdentity`/`unlinkIdentity` (§A16).
 
 **F2. Батарейка.** AC: тест при `battery=0` (у не-подписчика) блокируется и открывает paywall; **любой ответ (верный/неверный) уменьшает батарею на 1 на сервере**; **за завершение урока начисляется фикс `battery_reward_per_lesson` (дефолт +3), не выше `battery_max`, идемпотентно**; видео и чтение не тратят батарею; восстановление по конфигу, не выше `battery_max`; HUD красит иконку красным при ≤3; **у подписчика батарея не тратится и в HUD заменена ярким ассетом подписки**, после отмены — батарея возвращается полной. Все числа настраиваются в админке. Поведение идентично на iOS и Android.
 
-**F3. Алмазы.** AC: завершение **любого** урока начисляет случайную сумму по весам (`10`/`15`/`20`, 10 — чаще всего) ровно один раз на урок (идемпотентно по леджеру); сумма разыгрывается на сервере; баланс меняется только через RPC; покупка заморозки (150 алмазов/день, из конфига) проверяет достаточность.
+**F3. Алмазы.** AC: **первое** завершение урока начисляет случайную сумму по весам (`10`/`15`/`20`, 10 — чаще всего) ровно один раз на урок (идемпотентно по леджеру); **перепрохождение** даёт фикс `lesson_replay_diamond_reward` (дефолт 1, из конфига); сумма разыгрывается на сервере; баланс меняется только через RPC; автосписание за заморозку стрика (150 алмазов/день, из конфига) не уводит баланс в минус.
 
-**F4. Стрик.** AC: ≥1 урок в день увеличивает стрик; пропуск дня сбрасывает, если нет заморозки; покупка/наличие заморозки прощает день; день засчитывается по `last_activity_date < today`.
+**F4. Стрик.** AC: ≥1 урок в день увеличивает стрик; **заморозка автоматическая за алмазы** — при пропуске сервер списывает `streak_freeze_cost_per_day` за каждый пропущенный день, пока хватает баланса, и сохраняет стрик; если алмазов не хватает — стрик сбрасывается; день засчитывается по `last_activity_date < today`; стрик пересчитывается при заходе (`refresh_user_state`, КРИТ-8). Магазина заморозок и ручной покупки нет.
 
 **F5. Прогресс/разблокировка.** AC: следующий урок разблокируется только после `complete_lesson` на сервере; клиент не может разблокировать локально; прогресс-бар курса = `lessons_completed / total`.
 
@@ -490,15 +565,15 @@ RootStack (native-stack)
 
 **F8. Подписка.** AC: покупка проходит через **RevenueCat** на **обеих платформах** (Google Play Billing + Apple StoreKit); статус приходит вебхуком в `subscriptions` и подтверждается `validate-purchase`; **Restore Purchases** работает; локальная цена соответствует стране пользователя (стор определяет автоматически через RevenueCat Offerings). **Предложение управляется `get_subscription_offer` (§A14):** при включённом триале CTA даёт бесплатную неделю (Android free-trial offer / iOS introductory offer), при выключенном — обычную покупку; персональный таймер (если включён) показывает обратный отсчёт и по истечении убирает бесплатную неделю для этого юзера; триал и таймер включаются независимо из админки.
 
-**F9. Server-driven UI.** AC: дефолтный конфиг встроен (`default_ui_config.json`) и работает офлайн-старте; активный конфиг применяется по `min_app_version` (build-номер, см. A11); отключённый блок/вкладка не отображается; неизвестный тип блока не роняет приложение.
+**F9. Server-driven UI.** AC: дефолтный конфиг встроен (`default_ui_config.json`) и **страхует отказ загрузки UI-конфига** (когда сеть в целом есть), а **не** полный оффлайн-старт — при отсутствии сети показывается заглушка + Retry (ВАЖН-4, §12.1); активный конфиг применяется по `min_app_version` (build-номер, см. A11); отключённый блок/вкладка не отображается; неизвестный тип блока не роняет приложение.
 
 **F10. Региональные цены.** AC: пользователь видит цену своей страны (стор определяет автоматически через RevenueCat); тексты-заглушки до загрузки берутся из `price_tiers`/`country_price_map`.
 
 **F11. Настройки.** AC: все тумблеры сохраняются (MMKV); DELETE ACCOUNT удаляет данные и аккаунт (Apple + Google требование); Course-сброс удаляет прогресс; Account Linking не даёт отвязать единственный способ входа; управление подпиской ведёт в системные настройки соответствующего стора.
 
-**F12. Виджеты.** AC: виджеты показывают напоминание/стрик и открывают приложение по тапу (deep link) — **на Android через Glance, на iOS через WidgetKit** (≥2 размера на каждой платформе). Данные виджету поставляются единым мостом из приложения (shared storage / App Group на iOS).
+**F12. Виджеты.** AC: виджеты показывают напоминание/стрик и открывают приложение по тапу — **в MVP диплинк ведёт на Home** (`lorebinge://`); вариант «последний курс» (`lorebinge://course/{slug}`) — пост-MVP (НЕКР-16). **На Android через Glance, на iOS через WidgetKit** (≥2 размера на каждой платформе). Данные виджету поставляются единым мостом из приложения (shared storage / App Group на iOS).
 
 **F13. Аналитика/краши.** AC: ключевые события логируются (lesson_completed, paywall_shown, subscription_started, streak_lost) на обеих платформах (Firebase Analytics); краши уходят в Crashlytics; **пойманные клиентские ошибки** (сетевые сбои, RPC-ошибки, ошибки покупок) репортятся через `crashlytics().recordError(e)`; **серверные ошибки** (Edge Functions, RPC) пишутся в таблицу `error_logs`.
 
-**F14. Quests + Магазин (блоки во вкладке Profile).** AC: блок Quests во вкладке Profile показывает задания daily/monthly/exclusive со статусом; награда за выполненный квест начисляется один раз (идемпотентно по леджеру `quest_reward`); встроенный магазин позволяет купить заморозку (1/3/… дней) через `buy_streak_freeze`; недостаток алмазов даёт понятную ошибку, баланс не уходит в минус; отдельных вкладок/маршрутов `quests`/`shop` нет.
+**F14. Quests (блок во вкладке Profile).** AC: блок Quests во вкладке Profile показывает задания daily/monthly/exclusive со статусом; **прогресс квестов с `criteria.lessons_completed` обновляется в `complete_lesson`** (КРИТ-5); награда за выполненный квест начисляется один раз (идемпотентно по леджеру `quest_reward`); отдельной вкладки/маршрута `quests` нет. **Магазина нет** (убран, КРИТ-8) — заморозка стрика автоматическая за алмазы (F4).
 

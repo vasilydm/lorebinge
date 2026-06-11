@@ -20,7 +20,7 @@
 ### Phase 1 — База данных и RLS
 
 **Цель:** полная схема БД с защитой.
-**Задачи:** SQL-миграции для всех таблиц (раздел 6, включая `quests`/`user_quests`, поле `subscriptions.platform`, `payment_events` с `platform`); **миграции схемы `pipeline`** (Приложение C, C3) с RLS «только сервисная роль»; включить RLS и политики (раздел 7); `seed.sql` (категории, `app_config.economy`, дефолтный `ui_configs` с 4 вкладками, `price_tiers`/`country_price_map`, демо-квесты); триггеры `updated_at` и создание `profiles`/`streaks` при регистрации.
+**Задачи:** SQL-миграции для всех таблиц (раздел 6, включая `quests`/`user_quests`, поле `subscriptions.platform`+`trial_used`, `payment_events` §6.4, служебные таблицы `error_logs` §6.6); **без ачивок** (`achievements`/`user_achievements` не заводим — ВАЖН-16); `streaks` **без** `freezes_available` (заморозка автоматическая за алмазы); `profiles` **без** `avatar_url`, с `courses_completed`; **миграции схемы `pipeline`** (Приложение C, C3) с RLS «только сервисная роль»; включить RLS и политики (раздел 7); `seed.sql` (категории, `app_config.economy` с `lesson_replay_diamond_reward`/`courses_per_level`, `app_config.min_supported_build`, дефолтный `ui_configs` с 4 вкладками — **без блока SHOP**, `price_tiers`/`country_price_map`, демо-квесты); триггеры `updated_at` и создание `profiles`/`streaks` при регистрации.
 **Deliverables:** применённые миграции в Supabase dev.
 **AC:** таблицы существуют; клиент не может изменить чужие/критичные поля; сид-данные на месте.
 
@@ -39,7 +39,7 @@
 ### Phase 4 — Home + server-driven UI (F9)
 
 **Цель:** рабочий главный экран с лентой блоков.
-**Задачи:** рендерер блоков (раздел 11); встроенный `default_ui_config.json`; блоки Home (Lores, In Progress, Popular, Categories) + **вкладка Grid** (инстаграм-сетка обложек, §12.3б) + экран `category` (§12.3в) как независимые компоненты + их хуки; `get_home_feed`, `get_grid_feed`, `get_category_courses`; нижняя навигация (**4 вкладки: Home · Grid · Subscription · Profile**) с сохранением состояния (вложенные стеки); **выбор стартовой вкладки по прогрессу** (нет завершённых уроков → Grid, иначе Home; диплинк имеет приоритет, §12.1); **HUD + таб-бар как постоянный каркас** (`course_path`/`category` пушатся внутри стеков вкладок → каркас виден; скрыт только на корневых lesson/reward/paywall). Блоки Quests/Shop во вкладке Profile наполняются в Phase 11/12.
+**Задачи:** рендерер блоков (раздел 11); встроенный `default_ui_config.json`; блоки Home (Lores, In Progress, Popular, Categories) + **вкладка Grid** (инстаграм-сетка обложек, §12.3б) + экран `category` (§12.3в) как независимые компоненты + их хуки; `get_home_feed`, `get_grid_feed`, `get_category_courses`; нижняя навигация (**4 вкладки: Home · Grid · Subscription · Profile**) с сохранением состояния (вложенные стеки); **выбор стартовой вкладки по прогрессу** (нет завершённых уроков → Grid, иначе Home; диплинк имеет приоритет, §12.1); **HUD + таб-бар как постоянный каркас** (`course_path`/`category` пушатся внутри стеков вкладок → каркас виден; скрыт только на корневых lesson/reward/paywall; интерактивность HUD и окно level-up — §12.0); **force-update на Splash** (`app_config.min_supported_build` vs `nativeBuildVersion` → блокирующий экран обновления, §A15). Блок Quests во вкладке Profile наполняется в Phase 11/12 (магазина нет).
 **AC:** см. F9; Home (Lores/In Progress/Popular/Categories) и вкладка Grid отображаются на обеих платформах; тап в Grid-ячейке и по категории ведёт в курс; навигация сохраняет состояние; HUD и таб-бар видны на всех вкладках и на `course_path`/`category`, скрыты на lesson/reward/paywall.
 
 ### Phase 5 — Сетка уроков курса (F5 частично)
@@ -51,8 +51,8 @@
 ### Phase 6 — Раннер уроков и задания (F2 частично)
 
 **Цель:** прохождение урока.
-**Задачи:** `lesson/{lessonId}` (нижний HUD скрыт, `fullScreenModal`); **верхняя панель урока** (прогресс-бар; скрытие на полноэкранном видео; крестик `✕` → bottom sheet `Are you sure?` / `Exit lesson` (сброс) / `Cancel`, см. 12.5в); реализовать все типы заданий (раздел 6.5): video (`expo-video` — базово), **reading_text** (заголовок + буллеты-индикатор + посегментный текст с серением прошлых разделов + свайп-вверх через Gesture Handler/Reanimated + посегментное TTS-аудио со старт/стопом, см. 12.5а), **reading_media** (то же + медиа-картинка сверху, см. 12.5б), matching, fill_blank, image_recognition, multiple_choice, true_false, timeline (drag&drop через Gesture Handler); **нижняя кнопка по `requires_check` (Continue vs disabled-действие→Done, см. 6.5а/6.5б; правило не-перекрытия текста §6.5в)**; `submit_task_attempt`; переход между заданиями.
-**AC:** все типы заданий проходятся на обеих платформах; контентные показывают Continue (reading_text — на последнем сегменте, reading_media — сразу) и не тратят батарею; задания с проверкой показывают disabled-действие → активную Done; текст не перекрывается кнопкой; reading_text переключает разделы свайпом с корректным аудио.
+**Задачи:** `lesson/{lessonId}` (нижний HUD скрыт, `fullScreenModal`); **`start_lesson` при входе** (сброс `errors_count` + ленивая инициализация прогресса); **верхняя панель урока** (прогресс-бар; скрытие на полноэкранном видео; крестик `✕` → bottom sheet `Are you sure?` / `Exit lesson` (сброс) / `Cancel`, см. 12.5в); реализовать все типы заданий (раздел 6.5): video (`expo-video` — базово), **reading_text** (заголовок + буллеты-индикатор + посегментный текст + свайп-вверх + посегментное TTS-аудио, см. 12.5а), **reading_media** (то же + медиа сверху, см. 12.5б), **matching** (тап-выбор столбцов с цветами success/error, §12.5д), fill_blank, image_recognition, multiple_choice, true_false, timeline (drag&drop через Gesture Handler); **нижняя кнопка по `requires_check` (Continue vs disabled-действие→Done; раскладка не-перекрытия текста — §12.5)**; **вердикт после проверки** (подсветка success/error + баннер + правильный ответ + хаптика/звук, §12.5г); `submit_task_attempt`; переход между заданиями.
+**AC:** все типы заданий проходятся на обеих платформах; контентные показывают Continue (reading_text — на последнем сегменте, reading_media — сразу) и не тратят батарею; задания с проверкой показывают disabled-действие → активную Done и вердикт верно/неверно; текст не перекрывается кнопкой; reading_text переключает разделы свайпом с корректным аудио.
 
 ### Phase 7 — Видео-плеер с управлением (F6)
 
@@ -63,8 +63,8 @@
 ### Phase 8 — Экономика на сервере (F2, F3, F4, F5)
 
 **Цель:** батарейка/алмазы/стрик/разблокировка — server-authoritative.
-**Задачи:** RPC `complete_lesson`, `touch_streak`, `refill_battery`, `buy_streak_freeze`, `apply_streak_freeze`, `reset_course_progress`; **`submit_task_attempt` тратит `battery_cost_per_answer` за любой ответ; `complete_lesson` начисляет фикс `battery_reward_per_lesson` заряда за урок (cap `battery_max`, не подписчику, идемпотентно)**; восстановление по `battery_refill_minutes`; **HUD: батарея ↔ ассет подписки** (`app_config.subscription_badge`), возврат батареи при отмене; идемпотентность наград; интеграция в раннер и Home/HUD.
-**AC:** см. F2–F5; награды не дублируются; разблокировка только через сервер.
+**Задачи:** RPC `start_lesson` (сброс `errors_count` + ленивая инициализация прогресса), `complete_lesson`, `touch_streak` (внутренняя), `refresh_user_state` (батарея + ленивая переоценка стрика; **заменяет `refill_battery`**), `reset_course_progress`; **`buy_streak_freeze`/`apply_streak_freeze` НЕ реализуем — магазина и ручной заморозки нет (КРИТ-8)**; **автозаморозка стрика за алмазы** (`streak_freeze_cost_per_day`/пропущенный день) внутри `touch_streak`/`refresh_user_state`; **`submit_task_attempt` тратит `battery_cost_per_answer` за любой ответ; `complete_lesson` начисляет фикс `battery_reward_per_lesson` заряда за первое прохождение (cap `battery_max`, не подписчику, идемпотентно), за перепрохождение — `lesson_replay_diamond_reward` без заряда; квесты с `criteria.lessons_completed` и `courses_completed`/`knowledge_level` обновляются там же**; восстановление по `battery_refill_minutes`; **HUD: батарея ↔ ассет подписки** (`app_config.subscription_badge`), возврат батареи при отмене; идемпотентность наград; интеграция в раннер и Home/HUD.
+**AC:** см. F2–F5; награды не дублируются; разблокировка только через сервер; стрик пересчитывается при заходе (`refresh_user_state`).
 
 ### Phase 9 — Маскот и награды (F7)
 
@@ -78,23 +78,23 @@
 **Задачи:** **RevenueCat** (`react-native-purchases`): конфигурация Offerings/Packages для App Store + Google Play; entitlement `super`; экран Subscription (Super / Family); paywall (триггер battery=0); Edge `revenuecat-webhook` (обновление `subscriptions` + `payment_events`) и `validate-purchase` (реконсиляция); Restore Purchases; отображение цен из стора (RevenueCat) с фолбэком `price_tiers`. **Предложение подписки (§A14):** RPC `get_subscription_offer`; условный CTA (триал «Try 1 week for $0» — Android free-trial / iOS introductory offer — vs обычная покупка по `trial_available`); **персональный таймер** на Subscription и Paywall (тикает до `timer_ends_at`, исчезает при истечении → триал больше не предлагается); запись `trial_started` в `payment_events`.
 **AC:** см. F8, F10; покупка/восстановление работают в обоих сторах; триал и таймер управляются независимо из админки; статус приходит вебхуком и виден в приложении.
 
-### Phase 11 — Quests + Магазин (блок F) (F14)
+### Phase 11 — Quests (блок F) (F14)
 
-**Цель:** вкладка заданий с алмазными наградами и встроенным магазином заморозки.
-**Задачи:** таблицы `quests`/`user_quests` в миграциях/сиде; RPC `get_quests`, `claim_quest_reward` (идемпотентно); **блоки `QUESTS` + `SHOP` во вкладке Profile** (§12.11, `features/quests` рендерится секциями Profile) с секциями Daily / Monthly / Exclusive и **магазином-блоком** (`SHOP`) — покупка заморозки через `buy_streak_freeze`; обработка `INSUFFICIENT_DIAMONDS`/`QUEST_NOT_COMPLETED`; отдельных маршрутов `quests`/`shop` нет.
-**AC:** см. F14 (+ F3 в части траты алмазов).
+**Цель:** вкладка заданий с алмазными наградами.
+**Задачи:** таблицы `quests`/`user_quests` в миграциях/сиде; RPC `get_quests`, `claim_quest_reward` (идемпотентно); **обновление прогресса квестов в `complete_lesson`** (`criteria.lessons_completed`, КРИТ-5); **блок `QUESTS` во вкладке Profile** (§12.11, `features/quests` рендерится секциями Profile) с секциями Daily / Monthly / Exclusive; обработка `QUEST_NOT_COMPLETED`; отдельного маршрута `quests` нет. **Магазина (`SHOP`/`buy_streak_freeze`) нет** — убран (КРИТ-8); заморозка стрика автоматическая (Phase 8).
+**AC:** см. F14.
 
 ### Phase 12 — Профиль и настройки (F11)
 
 **Цель:** ЛК и все настройки.
-**Задачи:** Profile (ачивки + встроенные блоки Quests/Shop из Phase 11; **без дубля HUD** — level/streak/diamonds/battery даёт общий HUD-каркас, §10); Settings и подразделы (12.12): Preferences (MMKV + haptics), Profile-edit, Course-management, Account Linking (Google + Apple + Email), Documents (in-app), Support (Restore Subscription, управление подпиской в сторе, LOG OUT); `delete_account`.
+**Задачи:** Profile (инфо профиля + встроенный блок Quests из Phase 11; **без ачивок** — убраны, ВАЖН-16; **без дубля HUD** — level/streak/diamonds/battery даёт общий HUD-каркас, §12.0; интерактивность HUD — дропдаун level и дропдаун battery→подписки, окно level-up); Settings и подразделы (12.12): Preferences (MMKV + haptics; Sound Effects не глушит TTS), Profile-edit (Password только для email-аккаунтов), Course-management, **Account Linking через Supabase `linkIdentity`/`unlinkIdentity`** (§A16), Documents (in-app), Support (Restore Subscription, управление подпиской в сторе, LOG OUT); `delete_account`.
 **AC:** см. F11.
 
 ### Phase 13 — Виджеты и локальные уведомления (F12)
 
 **Цель:** напоминания и виджеты на обеих платформах.
-**Задачи:** **Android Glance** + **iOS WidgetKit** (≥2 размера каждый) через config-plugin/нативные таргеты; единый мост данных (App Group на iOS, shared storage на Android); локальные ежедневные напоминания (`expo-notifications`, тумблер в Preferences; запрос разрешений на обеих платформах); deep-link открытия по тапу.
-**AC:** см. F12; виджеты обновляются и открывают приложение на iOS и Android.
+**Задачи:** **Android Glance** + **iOS WidgetKit** (≥2 размера каждый) через config-plugin/нативные таргеты; единый мост данных (App Group на iOS, shared storage на Android); локальные ежедневные напоминания (`expo-notifications`, тумблер в Preferences; запрос разрешений на обеих платформах); **deep-link по тапу → Home (`lorebinge://`) в MVP** (НЕКР-16; вариант «последний курс по slug» — пост-MVP).
+**AC:** см. F12; виджеты обновляются и открывают приложение (Home) на iOS и Android.
 
 ### Phase 14 — Аналитика, краши и логирование (F13)
 
@@ -104,35 +104,39 @@
 - `@react-native-firebase/analytics` — ключевые события (обе платформы; `google-services.json` + `GoogleService-Info.plist`).
 - `@react-native-firebase/crashlytics` — неперехваченные краши.
 - Клиентское логирование ошибок: пойманные исключения (репозитории, хуки, покупки) → `crashlytics().recordError(e)`. Dev-логи — только в `__DEV__`.
-- Серверное логирование: таблица `error_logs` (схема ниже); каждая Edge Function/RPC при пойманной ошибке пишет запись.
+- Серверное логирование: таблица **`error_logs` (схема — в §6.6**, перенесена в модель данных, НЕКР-6); каждая Edge Function/RPC при пойманной ошибке пишет запись.
 
-**Схема таблицы `error_logs`:**
+**События аналитики MVP (НЕКР-14)** — покрывают воронку «установка → урок → пейволл → подписка» и экономику:
 
-```sql
-create table error_logs (
-  id          uuid primary key default gen_random_uuid(),
-  source      text not null,   -- 'edge_function' | 'rpc' | 'client'
-  function    text not null,   -- название функции/экрана
-  platform    text,            -- 'ios' | 'android' | null (для client)
-  error_code  text,
-  message     text not null,
-  payload     jsonb,           -- входные данные вызова (без PII)
-  user_id     uuid references profiles(id),
-  created_at  timestamptz default now()
-);
--- RLS: запись/чтение — только сервисная роль (через админку)
-```
+|Событие                |Ключевые параметры                       |
+|-----------------------|-----------------------------------------|
+|`sign_up`              |method (google/apple/email)              |
+|`lesson_started`       |course_id, lesson_id                     |
+|`task_answered`        |task_id, type, is_correct                |
+|`lesson_completed`     |course_id, lesson_id, errors_count       |
+|`course_completed`     |course_id, new_knowledge_level           |
+|`battery_empty`        |course_id, lesson_id                     |
+|`paywall_shown`        |source (battery_empty/subscription)      |
+|`paywall_dismissed`    |source                                   |
+|`trial_started`        |product_id, platform                     |
+|`subscription_started` |product_id, platform                     |
+|`quest_claimed`        |quest_id, period                         |
+|`streak_lost`          |previous_streak                          |
+|`level_up`             |new_knowledge_level                      |
+|`widget_opened`        |size                                     |
 
-**AC:** см. F13.
+> Параметры обязательно без PII. Список — рабочий минимум; расширяется по продуктовым запросам. (`trial_started` также пишется в `payment_events` вебхуком — Phase 10.)
+
+**AC:** см. F13; перечисленные события уходят в Firebase Analytics на обеих платформах.
 
 ### Phase 15 — Админ-панель (выделена в отдельный подпроект)
 
-Админка — самостоятельный подпроект со своими фазами, стеком и дизайн-системой. **Полное описание — в Приложении B.** Её фазы (15.1–15.6) идут после релиза MVP-приложения, но БД-фундамент (аналитические view) закладывается раньше.
+Админка — самостоятельный подпроект со своими фазами, стеком и дизайн-системой. **Полное описание — в Приложении B.** Её фазы (**B-Phase 1–7, Приложение B**) идут после релиза MVP-приложения, но БД-фундамент (аналитические view) закладывается раньше.
 
 ### Phase 16 — Подготовка к релизу (App Store + Google Play)
 
 **Цель:** публикация в **обоих сторах**.
-**Задачи:** dev/prod окружения (два проекта Supabase); EAS Submit в App Store Connect и Google Play Console; **Privacy Policy + App Privacy (Apple) + Data Safety (Google)**; иконки/стор-листинги для обеих платформ; диплинки/Universal Links/App Links (проверка AASA + assetlinks.json); проверка DELETE ACCOUNT (требование обоих сторов); проверка Restore Purchases; тест на реальных устройствах iOS и Android; настройка RevenueCat prod (App Store / Play credentials); App Store review checklist (Sign in with Apple, account deletion, subscription disclosure).
+**Задачи:** dev/prod окружения (два проекта Supabase); EAS Submit в App Store Connect и Google Play Console; **Privacy Policy + App Privacy (Apple) + Data Safety (Google)**; **Privacy Manifests (iOS): проверить агрегированный `PrivacyInfo.xcprivacy`** (Expo генерирует из манифестов SDK), задекларировать required-reason API, согласовать с App Privacy labels (НЕКР-13); иконки/стор-листинги для обеих платформ; диплинки/Universal Links/App Links (проверка AASA + assetlinks.json); проверка DELETE ACCOUNT (требование обоих сторов); проверка Restore Purchases; тест на реальных устройствах iOS и Android; настройка RevenueCat prod (App Store / Play credentials); App Store review checklist (Sign in with Apple, account deletion, subscription disclosure).
 **AC:** release-сборки подключаются к prod; обе платформы проходят ревью сторов; юридические требования Apple и Google выполнены.
 
 > **Вне MVP (после релиза):** FCM/APNs push, Cloudflare R2, расширенный server-side billing, офлайн-режим. **iOS теперь в MVP** (целевая платформа наравне с Android). Блок F (Quests) входит в MVP (Phase 11).

@@ -6,7 +6,7 @@
 
 ## 1. Обзор продукта (кратко)
 
-Обучающее приложение по истории в стиле Duolingo. Маркетинговая воронка: «затягивающие» ИИ-видео в соцсетях → крючок → установка приложения → обучение по курсам из уроков и заданий (внутри курса — сетка карточек-уроков, §12.4). Геймификация: батарейка (лимит тестов), алмазы (валюта), стрик (дни подряд), маскот-награды, ачивки, подписка.
+Обучающее приложение по истории в стиле Duolingo. Маркетинговая воронка: «затягивающие» ИИ-видео в соцсетях → крючок → установка приложения → обучение по курсам из уроков и заданий (внутри курса — сетка карточек-уроков, §12.4). Геймификация: батарейка (лимит тестов), алмазы (валюта), стрик (дни подряд), уровень (за пройденные курсы), маскот-награды, подписка. *(Ачивки и магазин убраны из MVP — ВАЖН-16/КРИТ-8.)*
 
 **Полное описание продукта — в `concept.md`.** Этот спек не дублирует продуктовую логику, а формализует её.
 
@@ -29,14 +29,14 @@
 |Архитектура       |Компоненты + хуки; feature-based; «UI → data» через хуки-репозитории                |аналог MVVM: `Screen` (компонент) + `useXxxScreen()` (хук-«VM») + `UiState` (тип)    |
 |Навигация         |**React Navigation v7** (native-stack + bottom-tabs)                                |+ deep links (custom scheme) + Universal Links (iOS) / App Links (Android)           |
 |Диплинки/атрибуция|**Linkrunner** (`@linkrunner/react-native`)                                          |Единый вход из соц-сетей: установлено → курс сразу; не установлено → стор → установка → курс (deferred deep link). Fallback — собственное решение.|
-|Состояние         |**TanStack Query** (server state) + **Zustand** (ui/client state)                   |кэш запросов, инвалидация; нет глобального DI                                        |
+|Состояние         |**TanStack Query** (server state); локальное UI-состояние — React state/Context     |кэш запросов, инвалидация; нет глобального DI; Zustand **не используется** (НЕКР-10)  |
 |Async             |Promises / async-await                                                              |через TanStack Query                                                                 |
 |Сеть/Бэкенд       |**supabase-js** (`@supabase/supabase-js`) + `react-native-url-polyfill`             |RPC через `.rpc()`, Edge через `.functions.invoke()`                                 |
 |Валидация данных  |**Zod**                                                                             |рантайм-валидация DTO/`payload` по типам                                             |
 |Локальный кэш     |**MMKV** (`react-native-mmkv`) — настройки/флаги; **expo-sqlite** — кэш контента    |MMKV ⟵ DataStore; SQLite ⟵ Room                                                      |
 |Сессия/секреты    |**expo-secure-store** (Keychain/Keystore)                                           |токены сессии Supabase хранятся шифрованно                                           |
 |Картинки          |**expo-image**                                                                      |кэш, placeholder, blurhash; ⟵ Coil                                                   |
-|Анимации/жесты    |**rive-react-native** (маскот, splash) + **Reanimated 3** + **Gesture Handler**     |Rive — кросс-платформенный рантайм; жесты — свайп-чтение, drag timeline, scrub видео |
+|Анимации/жесты    |**rive-react-native** (маскот, splash) + **Reanimated** + **Gesture Handler**       |Rive — кросс-платформенный рантайм; жесты — свайп-чтение, drag timeline, scrub видео; версия Reanimated — A1 |
 |Видео             |**expo-video** (HLS)                                                                |AVPlayer (iOS) / ExoPlayer (Android) под капотом; ⟵ Media3                           |
 |Виджеты           |**WidgetKit (iOS)** + **Glance (Android)**                                          |нативные таргеты через prebuild/config-plugin; единый JS-мост данных                 |
 |Локальные уведомл.|**expo-notifications**                                                              |MVP — локальные; APNs (iOS) + FCM (Android) — позже                                  |
@@ -62,7 +62,7 @@
 
 ## 3. Архитектурные принципы
 
-1. **Server-authoritative.** Вся экономика (батарейка, алмазы, стрик) и логика разблокировки уроков выполняются на сервере (Postgres RPC). Клиент только вызывает и отображает. Клиенту никогда не доверяем подсчёт валюты/прогресса.
+1. **Server-authoritative.** Вся экономика (батарейка, алмазы, стрик) и логика разблокировки уроков выполняются на сервере (Postgres RPC). Клиент только вызывает и отображает. Клиенту никогда не доверяем подсчёт валюты/прогресса. *(Единственное осознанное исключение — `submit_task_attempt(is_correct)`: клиент сам сообщает правильность, но она влияет лишь на `errors_count`/тон маскота, не на экономику — НЕКР-15, §8.1.)*
 1. **Single source of truth.** Состояние пользователя живёт в БД. Клиент кэширует (TanStack Query + MMKV/SQLite) для скорости, но при расхождении прав сервер.
 1. **Один код — две платформы.** Пишем кросс-платформенно. Платформенные ветки — только там, где это неизбежно (`Platform.select`, `*.ios.tsx` / `*.android.tsx`, нативные модули виджетов). Любая платформо-зависимая логика изолируется в `src/platform/`.
 1. **Слои (аналог MVVM):**
@@ -132,13 +132,13 @@ app/
     │   ├── coursepath/          # сетка уроков курса (карточки с обложками)
     │   ├── lesson/              # урок + раннер заданий
     │   │   └── tasks/           # VideoTask, ReadingTextTask, ReadingMediaTask, MatchingTask, FillBlankTask, ...
-    │   ├── reward/              # маскот + награды
-    │   ├── quests/              # блоки QUESTS + SHOP — рендерятся во вкладке Profile (§12.7)
+    │   ├── reward/              # маскот + награды + оверлей level-up (§12.0)
+    │   ├── quests/              # блок QUESTS — рендерится во вкладке Profile (§12.7)
     │   ├── subscription/        # блок G + paywall
-    │   ├── profile/             # вкладка Profile (ачивки + Quests + Shop) + settings
+    │   ├── profile/             # вкладка Profile (инфо профиля + Quests) + settings
     │   │   └── settings/        # preferences, profile, course, linking, docs
     │   └── player/              # общий видео-плеер (пауза/перемотка) для видео-заданий
-    ├── hud/                     # HUD-компонент (battery/diamonds/streak ↔ ассет подписки)
+    ├── hud/                     # HUD-каркас (level/streak/diamonds/battery ↔ ассет; дропдауны level/battery, §12.0)
     └── platform/                # платформо-зависимое: iap (RevenueCat), widgets-bridge, notifications, haptics, apple-auth
 ```
 
