@@ -167,7 +167,7 @@ export type AppResult<T> =
 
 ## 10. Навигация (граф маршрутов)
 
-> **React Navigation v7.** Root — native-stack; внутри — `BottomTab` с 4 вкладками, **каждая со своим вложенным native-stack** (сохранение back stack на вкладку). Параметры между экранами — **только id**. Тип-безопасность через `RootStackParamList`/`TabParamList`.
+> **React Navigation v7.** Root — native-stack; внутри — `BottomTab` с **5 вкладками** (одна из них — **Catalog — по умолчанию выключена**, «спящая»: рендерится, только когда админ включит её в `ui_configs`, §11/§12.3г), **каждая со своим вложенным native-stack** (сохранение back stack на вкладку). Параметры между экранами — **только id**. Тип-безопасность через `RootStackParamList`/`TabParamList`.
 >
 > **HUD + нижняя панель вкладок = постоянный каркас.** И HUD (сверху), и таб-бар (снизу) рендерятся на уровне `BottomTabs` (`main`) и видны на **всех** экранах вкладок, включая запушенные внутри них `course_path` и `category`. Корневые экраны `lesson`/`reward`/`paywall` лежат **над** `main` и перекрывают его целиком — пока открыт любой из них, HUD и таб-бар не видны (это и есть «полноэкранный» режим урока/награды/пейволла).
 
@@ -177,16 +177,19 @@ RootStack (native-stack)
 ├── auth (native-stack)
 │   ├── auth/login
 │   └── auth/register            (email + код подтверждения)
-├── main  (BottomTabs — 4 вкладки; HUD сверху + таб-бар снизу = общий каркас)
+├── main  (BottomTabs — 5 вкладок; Catalog по умолчанию ВЫКЛЮЧЕНА (спящая); HUD сверху + таб-бар снизу = общий каркас)
 │   ├── home          (вкладка 1, native-stack)
-│   │   ├── home/feed                  (лента блоков: Lores, In Progress, Popular, Categories)
-│   │   ├── category/{categoryId}      (курсы одной категории)          — presentation: card
+│   │   ├── home/feed                  (лента блоков: Lores, In Progress, Popular — БЕЗ Categories)
 │   │   └── course_path/{courseId}     (сетка уроков; HUD+таб-бар видны) — presentation: card
-│   ├── grid          (вкладка 2, native-stack)
+│   ├── catalog       (вкладка 2 — СПЯЩАЯ; enabled:false по умолчанию, включается из админки B6.7, §12.3г)
+│   │   ├── catalog/feed               (алфавитный индекс категорий, §12.3г)
+│   │   ├── category/{categoryId}      (курсы одной категории)          — presentation: card
+│   │   └── course_path/{courseId}     (сетка уроков)                   — presentation: card
+│   ├── grid          (вкладка 3, native-stack)
 │   │   ├── grid/feed                  (инстаграм-сетка обложек курсов)
 │   │   └── course_path/{courseId}     (тот же экран курса)             — presentation: card
-│   ├── subscription  (вкладка 3, блок G)
-│   └── profile       (вкладка 4, native-stack)
+│   ├── subscription  (вкладка 4, блок G)
+│   └── profile       (вкладка 5, native-stack)
 │         ├── profile/main             (Profile — инфо профиля; квесты убраны)
 │         └── settings
 │               ├── settings/preferences
@@ -202,7 +205,7 @@ RootStack (native-stack)
 └── paywall                       (ТОЛЬКО battery=0 во время задания)  — fullScreenModal
 ```
 
-> **`course_path` и `category` — общие экраны вкладок.** Регистрируются в стеке каждой вкладки, откуда на них переходят (`course_path` — из `home`, `grid` и по диплинку — в стек `grid`; `category` — из `home`). Поэтому таб-бар и HUD остаются на месте, а возврат — стрелкой/жестом внутри стека вкладки (§10.1). Параметр — только `courseId`/`categoryId`.
+> **`course_path` и `category` — общие экраны вкладок.** Регистрируются в стеке каждой вкладки, откуда на них переходят (`course_path` — из `home`, `grid`, `catalog` и по диплинку — в стек `grid`; `category` — **только из `catalog`**, §12.3г). Поэтому таб-бар и HUD остаются на месте, а возврат — стрелкой/жестом внутри стека вкладки (§10.1). Параметр — только `courseId`/`categoryId`. **Пока Catalog выключена, экран `category` недостижим** (единственный вход в него — через индекс каталога; на Home категорий больше нет).
 > **Квесты убраны из проекта целиком** (глобальное решение): отдельной вкладки/маршрута нет, блока `QUESTS` нет, экрана `§12.7` нет. **Магазина заморозки тоже нет** (убран, КРИТ-8): заморозка стрика автоматическая за алмазы, отдельного блока/маршрута `shop` нет.
 
 **Deep links / Universal Links (заложить структуру сразу, обе платформы):**
@@ -236,7 +239,7 @@ RootStack (native-stack)
 **Кнопка «назад» (стрелка в хедере).** На **запушенных** экранах (не корни вкладок) сверху слева — иконка-стрелка **`ChevronLeft`** (Lucide, цвет — токен `foreground`), тап → `navigation.goBack()`. Применяется на:
 
 - `course_path/{courseId}` — назад на экран, откуда зашли (`home`-лента, `grid`-сетка или `category`);
-- `category/{categoryId}` (курсы категории) — назад на `home`;
+- `category/{categoryId}` (курсы категории) — назад на корень таба **Catalog** (`catalog/feed`, §12.3г);
 - `settings` и **все** его подэкраны (`settings/preferences`, `settings/profile`, `settings/course`, `settings/account_linking`, `settings/help_center`, `settings/send_feedback`, `settings/terms`, `settings/privacy`) — каждый возвращает на предыдущий уровень (подэкран → `settings` → `profile`).
 
 > Стрелка-назад и HUD не конфликтуют: на запушенных экранах вкладок (`course_path`, `category`, `settings/*`) HUD остаётся сверху, стрелка — отдельным элементом панели экрана слева (по дизайну кита). HUD скрыт только на корневых полноэкранных `lesson`/`reward`/`paywall`.
@@ -269,25 +272,26 @@ RootStack (native-stack)
       "blocks": [
         { "id": "lores",       "type": "LORES",       "enabled": true, "order": 1 },
         { "id": "in_progress", "type": "IN_PROGRESS", "enabled": true, "order": 2 },
-        { "id": "popular",     "type": "POPULAR",     "enabled": true, "order": 3 },
-        { "id": "categories",  "type": "CATEGORIES",  "enabled": true, "order": 4 }
+        { "id": "popular",     "type": "POPULAR",     "enabled": true, "order": 3 }
       ]
     },
-    { "id": "grid", "icon": "grid", "label_key": "nav_grid", "enabled": true, "order": 2,
+    { "id": "catalog", "icon": "library", "label_key": "nav_catalog", "enabled": false, "order": 2,
+      "blocks": [ { "id": "catalog", "type": "CATALOG", "enabled": true, "order": 1 } ] },
+    { "id": "grid", "icon": "grid", "label_key": "nav_grid", "enabled": true, "order": 3,
       "blocks": [ { "id": "grid", "type": "GRID", "enabled": true, "order": 1 } ] },
-    { "id": "subscription", "icon": "crown", "label_key": "nav_sub", "enabled": true, "order": 3,
+    { "id": "subscription", "icon": "crown", "label_key": "nav_sub", "enabled": true, "order": 4,
       "blocks": [ { "id": "subscription", "type": "SUBSCRIPTION", "enabled": true, "order": 1 } ] },
-    { "id": "profile", "icon": "profile", "label_key": "nav_profile", "enabled": true, "order": 4,
+    { "id": "profile", "icon": "profile", "label_key": "nav_profile", "enabled": true, "order": 5,
       "blocks": [ { "id": "profile", "type": "PROFILE", "enabled": true, "order": 1 } ] }
   ]
 }
 ```
 
-> **Раскладка вкладок (RN9.1).** Блок `GRID` переехал с Home на **отдельную вкладку Grid** (инстаграм-сетка обложек, §12.3б); Home начинается с `LORES`. **Блока `QUESTS` больше нет** (квесты убраны из проекта целиком) — вкладка Profile содержит только блок `PROFILE`. **Блока `SHOP` больше нет** (магазин убран, КРИТ-8). Иконка вкладки Grid — `grid` (Lucide `LayoutGrid`). Порядок вкладок: **Home · Grid · Subscription · Profile**.
+> **Раскладка вкладок.** Блок `GRID` — на **отдельной вкладке Grid** (инстаграм-сетка обложек, §12.3б); Home — это `LORES`/`IN_PROGRESS`/`POPULAR` (**блок `CATEGORIES` с Home убран**). **Категории переехали в новую вкладку `Catalog`** — алфавитный индекс категорий (§12.3г). **Catalog по умолчанию `enabled:false` (спящая):** код едет в сборке, но в таб-баре её нет, пока админ не включит вкладку через Layout Builder (B6.7) — это сделано осознанно: пока курсов мало, хватает лент Home/Grid; индекс категорий включат, когда каталог разрастётся. **Блоков `QUESTS`/`SHOP` нет** (убраны). Иконки: Grid — `grid` (Lucide `LayoutGrid`), Catalog — `library` (Lucide `LibraryBig`; визуально отличается от Grid). Порядок вкладок (когда Catalog включат): **Home · Catalog · Grid · Subscription · Profile**; пока выключена — **Home · Grid · Subscription · Profile**.
 
 ### Клиентская реализация (RN)
 
-- **Реестр блоков:** `type BlockType = 'GRID' | 'LORES' | 'IN_PROGRESS' | 'POPULAR' | 'CATEGORIES' | 'SUBSCRIPTION' | 'PROFILE'`. *(Блоки `QUESTS` и `SHOP` удалены — квесты и магазин убраны.)*
+- **Реестр блоков:** `type BlockType = 'GRID' | 'LORES' | 'IN_PROGRESS' | 'POPULAR' | 'CATALOG' | 'SUBSCRIPTION' | 'PROFILE'`. *(Блок `CATALOG` — новый, алфавитный индекс категорий §12.3г; старый блок `CATEGORIES` с Home убран. Блоки `QUESTS` и `SHOP` удалены — квесты и магазин убраны.)*
 - **Рендерер:** компонент `<RenderBlock type={...} />` мапит `BlockType` → соответствующий компонент через объект-словарь `Record<BlockType, React.ComponentType>`. Блок получает данные из своего хука, не зная о расположении.
 - Каждая вкладка рендерит свой список `blocks` (отсортированный, только `enabled`) в **`FlatList`** (ленивый рендер; ⟵ LazyColumn).
 - **Неизвестный `type`** (конфиг новее приложения) — пропускается без краха (`if (!registry[type]) return null`).
@@ -342,11 +346,11 @@ RootStack (native-stack)
 
 ### 12.3 Home (вкладка 1)
 
-- **Назначение:** лента блоков из конфига — **Lores, In Progress, Popular, Categories** (блок Grid переехал в отдельную вкладку, §12.3б). HUD и таб-бар — общий каркас (§10), не часть экрана.
+- **Назначение:** лента блоков из конфига — **Lores, In Progress, Popular** (блок Grid — на отдельной вкладке, §12.3б; **блок Categories убран с Home** — категории переехали в спящую вкладку Catalog, §12.3г). HUD и таб-бар — общий каркас (§10), не часть экрана.
 - **UiState:** `loading | content(blocksData) | error`.
-- **Данные:** один вызов `get_home_feed` (через TanStack Query).
-- **Действия:** тап карточки (Lores / In Progress / Popular) → `course_path/{id}`; тап плитки категории → `category/{categoryId}` (§12.3в).
-- **Геометрия карточек Home (канон).** Все карточки курсов на Home — **вертикальные ~3:4** (портрет, но не «инстаграмные» 9:16 — это пропорция Grid, §12.3б) со **скруглёнными углами** (`radiusLarge`). Применяется к **Lores, In Progress, Popular** и к превью-карточкам категории (§12.3в). Так Home читается как «полка карточек-историй», а Grid (9:16) — как отсылка к рилсам.
+- **Данные:** один вызов `get_home_feed` (через TanStack Query); **категории в нём больше не приходят** (их отдаёт `get_catalog`, §8.1).
+- **Действия:** тап карточки (Lores / In Progress / Popular) → `course_path/{id}`. *(Плитки категорий с Home убраны — путь в категории теперь через вкладку Catalog, §12.3г.)*
+- **Геометрия карточек Home (канон).** Все карточки курсов на Home — **вертикальные ~3:4** (портрет, но не «инстаграмные» 9:16 — это пропорция Grid, §12.3б) со **скруглёнными углами** (`radiusLarge`). Применяется к **Lores, In Progress, Popular**; та же геометрия — у карточек курсов на экране категории (§12.3в). Так Home читается как «полка карточек-историй», а Grid (9:16) — как отсылка к рилсам.
 - **Состояние «курс пройден» (overlay, D).** Если `is_completed=true` (из `get_home_feed`) — поверх обложки/градиента карточки кладётся **более тёмный затемняющий overlay** (токен `overlay-completed`, §5.6) и в углу — **значок «пройдено»** (Lucide `CircleCheck`/`Check` в кружке, токен `success`). Карточка остаётся кликабельной (тап → `course_path`, можно перепройти). Затемнение «гасит» пройденный курс, не пряча его и не мешая соседним карточкам.
 
 #### 12.3а Карточка Lores (Block B / `LoresBlock`) — детально
@@ -378,13 +382,26 @@ RootStack (native-stack)
 
 #### 12.3в Category (курсы одной категории)
 
-- **Назначение:** список курсов выбранной категории. Открывается тапом по плитке в блоке Categories на Home (§12.3). Пятый путь в курс наряду с Lores/In Progress/Popular/Grid.
+- **Назначение:** список курсов выбранной категории. Открывается тапом по строке категории в индексе **Catalog** (§12.3г) — единственный вход (на Home категорий больше нет). Путь в курс наряду с Lores/In Progress/Popular/Grid.
 - **Раскладка:** заголовок = имя категории; ниже — сетка **вертикальных ~3:4** карточек курсов со скруглёнными углами (та же геометрия, что на Home, §12.3): обложка `cover_image_url` + название + счётчики уроков/заданий (упрощённый вариант карточки Lores). Тап по карточке → `course_path/{course_id}`.
 - **Состояние «курс пройден» (D):** при `is_completed=true` — тёмный `overlay-completed` + значок «пройдено» (`success`), как на Home/Grid.
 - **UiState:** `loading | content(category, courses) | empty | error`.
 - **Данные:** `get_category_courses(category_id)` → `{ category:{id,name}, courses:[{id,title,cover_image_url,lessons_count,tasks_count,is_completed}] }` (только `is_published`).
-- **Возврат:** стрелка-назад/жест → `home` (§10.1).
+- **Возврат:** стрелка-назад/жест → корень таба **Catalog** (`catalog/feed`, §10.1).
 - **Состояния:** empty — «No courses in this category yet»; error — ретрай.
+
+#### 12.3г Catalog (вкладка — алфавитный индекс категорий) — *спящая, включается из админки*
+
+- **Назначение:** раздел **«All Courses»** — все курсы, разложенные по категориям. Верхний уровень = **алфавитный индекс категорий**; тап по категории → её курсы (§12.3в). Сюда «переехал» бывший блок Categories с Home. **По умолчанию вкладка выключена** (`enabled:false`, §11): пока курсов/категорий мало, хватает лент Home/Grid; админ включает Catalog через Layout Builder (B6.7), когда каталог разрастётся (ориентир — ~8–10+ категорий).
+- **Раскладка — `SectionList` с «липкими» заголовками-буквами:**
+  - **Секции** = группировка категорий по **первой букве** имени; заголовок секции — буква-разделитель (`A ────`): мелкий `muted-foreground` + тонкая линия `border`, sticky при скролле. Не-буквенные/цифровые имена — в бакет `#`.
+  - **Строка категории — мини-карточка** (в духе кита, не голый текст): маленькая обложка (`expo-image`) + имя категории + счётчик «N courses» + `ChevronRight` (Lucide); фон `card`/`surface`, скругление. Тап → `category/{categoryId}` (§12.3в) в стеке этого же таба.
+  - **Сортировка** — по имени категории (англ., `localeCompare`, регистронезависимо); `categories.sort_order` в индексе **не** используется (только алфавит). **Пустые категории** (0 опубликованных курсов) в индекс **не попадают**.
+- **UiState:** `loading | content(sections) | empty | error`.
+- **Данные:** `get_catalog` (§8.1) → `{ categories:[{ id, name, slug, courses_count }] }`, отсортировано по имени, только категории с ≥1 `is_published`-курсом. Группировку по буквам и формирование `sections` делает клиент.
+- **Возврат/навигация:** корень таба — `catalog/feed`; `category` и `course_path` пушатся в стек Catalog, «Назад» возвращает на уровень выше (course_path → category → catalog/feed).
+- **Состояния:** empty — «No categories yet»; error — ретрай.
+- **Пост-MVP (не сейчас):** A-Z скраббер справа (быстрый перескок по буквам) и поиск по каталогу — их естественное место именно здесь.
 
 ### 12.4 Course Path (сетка уроков курса)
 

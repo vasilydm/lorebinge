@@ -125,10 +125,11 @@ app/
     ├── features/                # экраны по фичам: Screen + хуки + UiState
     │   ├── splash/
     │   ├── auth/
-    │   ├── home/                # Home + блоки Lores/In Progress/Popular/Categories
-    │   │   └── blocks/          # LoresBlock, InProgressBlock, PopularBlock, CategoriesBlock
+    │   ├── home/                # Home + блоки Lores/In Progress/Popular (Categories убран — переехал в Catalog)
+    │   │   └── blocks/          # LoresBlock, InProgressBlock, PopularBlock
     │   ├── grid/                # вкладка Grid — инстаграм-сетка обложек курсов (§12.3б)
-    │   ├── category/            # список курсов одной категории (§12.3в)
+    │   ├── catalog/             # вкладка Catalog — алфавитный индекс категорий (SectionList); СПЯЩАЯ, enabled из админки (§12.3г)
+    │   ├── category/            # список курсов одной категории (§12.3в); вход — из Catalog
     │   ├── coursepath/          # сетка уроков курса (карточки с обложками)
     │   ├── lesson/              # урок + раннер заданий
     │   │   └── tasks/           # VideoTask, ReadingTextTask, ReadingMediaTask, MatchingTask, FillBlankTask, ...
