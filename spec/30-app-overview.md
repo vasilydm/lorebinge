@@ -38,6 +38,7 @@
 |Картинки          |**expo-image**                                                                      |кэш, placeholder, blurhash; ⟵ Coil                                                   |
 |Анимации/жесты    |**rive-react-native** (маскот, splash) + **Reanimated** + **Gesture Handler**       |Rive — кросс-платформенный рантайм; жесты — свайп-чтение, drag timeline, scrub видео; версия Reanimated — A1 |
 |Видео             |**expo-video** (HLS)                                                                |AVPlayer (iOS) / ExoPlayer (Android) под капотом; ⟵ Media3                           |
+|Аудио             |**expo-audio**                                                                      |TTS-озвучка чтения (§12.5а, спящая фича `reading_tts_enabled`) + эффект-звуки урока (§12.5г). `expo-av` не используем (задепрекейчен)|
 |Виджеты           |**WidgetKit (iOS)** + **Glance (Android)**                                          |нативные таргеты через prebuild/config-plugin; единый JS-мост данных                 |
 |Локальные уведомл.|**expo-notifications**                                                              |MVP — локальные; APNs (iOS) + FCM (Android) — позже                                  |
 |Тактильность      |**expo-haptics**                                                                    |⟵ Android Vibration; кросс-платформенно                                              |

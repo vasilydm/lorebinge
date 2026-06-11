@@ -8,6 +8,12 @@
 
 > **Без изменений по сути.** Бэкенд платформо-независим. Изменения для второй платформы — только в полях, связанных с платежами (`subscriptions.platform`, `payment_events.platform`/`store`). Все таблицы — в схеме `public`, кроме `auth.users` (управляется Supabase Auth). У всех таблиц `created_at timestamptz default now()`. Где есть изменения — `updated_at` с триггером. Все id — `uuid default gen_random_uuid()`, кроме явно указанных.
 
+> **Политика `ON DELETE` для внешних ключей (контракт ссылочной целостности).** Раньше не была задана — закрыто по ревизии БД (B-03/C-03). Действует **каскадная цепочка от аккаунта**:
+> - `profiles.id` → `auth.users(id)` **`ON DELETE CASCADE`**. Это ключевое звено: удаление аккаунта делается **одним** вызовом `auth.admin.deleteUser(uid)` (Edge Function `delete-account` с сервисной ролью, §8), а БД каскадом вычищает всё остальное. Прямого `delete from auth.users` из RPC не делаем.
+> - **Пользовательские таблицы** (`streaks`, `user_course_progress`, `user_lesson_progress`, `user_task_attempts`, `diamond_transactions`, `subscriptions`) → `profiles(id)` **`ON DELETE CASCADE`**.
+> - **Контент** (`lessons` → `courses`, `tasks` → `lessons`, `media_assets` → `tasks`) → **`ON DELETE CASCADE`** от родителя (удаление курса в админке/конвейере чистит уроки→задания→медиа).
+> - **Аудит переживает удаление аккаунта:** `payment_events.user_id` и `error_logs.user_id` → `profiles(id)` **`ON DELETE SET NULL`** (финансовую/диагностическую историю не теряем; `user_id` поэтому nullable — см. ниже).
+
 ### 6.1 Пользователь и геймификация
 
 **`profiles`** (1:1 с `auth.users`)
@@ -125,6 +131,8 @@
 
 > **HLS на обеих платформах.** `hls_url` (Cloudflare Stream, `.m3u8`) проигрывается нативно: AVPlayer на iOS, ExoPlayer на Android — через `expo-video`. Дополнительной транскодировки под платформу не требуется.
 
+> **Где хранится TTS-аудио чтения (источник истины, D-1).** Аудио озвучки сегментов `reading_text`/`reading_media` хранится **inline в `tasks.payload.segments[].audio_url`** (ссылка на файл в Supabase Storage) — один источник истины, рядом с текстом сегмента, к которому привязана озвучка. **`media_assets` для TTS-чтения НЕ используется:** ветка `kind='tts_audio'` (+ `audio_url`/`text_content`) **зарезервирована** и в MVP не задействована (раньше дублировала inline-аудио). `media_assets` в MVP — **только видео** (`kind='video'`: `cloudflare_video_id`/`hls_url`/`poster_url`). Воспроизведение TTS включается глобальным тумблером `app_config.economy.reading_tts_enabled` (спящая фича, §6.4/§12.5а).
+
 ### 6.3 Прогресс пользователя
 
 **`user_course_progress`**
@@ -184,12 +192,15 @@
 
 > **Кросс-платформенная подписка.** Подписка `app_store` и `google_play` ведутся в одной строке на пользователя; источник статуса — RevenueCat (вебхук `revenuecat-webhook`). Если у пользователя есть активный entitlement на любой из платформ — `status` = `active`/`trial`. **Apple-специфика:** бесплатная неделя реализуется как **introductory offer** (free trial) на подписке App Store; `purchase_token` для Apple хранит `original_transaction_id`.
 
+> **Жизненный цикл строки (C-04).** Строка `subscriptions` создаётся **при регистрации** — тем же триггером на `auth.users`, что создаёт `profiles`/`streaks` (Phase 1), со `status='none'`. Так `get_subscription_offer`, `get_me` (§8.1) и HUD всегда читают существующую строку и не разбирают `NULL`. **Защитно** на чтении трактуем «строки нет = `none`», но штатно строка есть у каждого пользователя.
+
 **`payment_events`** (аудит платёжных событий; пишет только `revenuecat-webhook`)
 
 |Поле         |Тип            |Примечание                                                                                          |
 |-------------|---------------|----------------------------------------------------------------------------------------------------|
 |`id`         |uuid PK        |                                                                                                    |
-|`user_id`    |uuid FK→profiles|связь по `rc_app_user_id` → `user_id`                                                              |
+|`event_id`   |text unique    |**ID события из payload RevenueCat** — ключ идемпотентности вебхука (B-5). Вебхук пишет `on conflict (event_id) do nothing`: повторная доставка (RevenueCat = at-least-once) не плодит дубль и не применяет сайд-эффект повторно|
+|`user_id`    |uuid FK→profiles **null**|связь по `rc_app_user_id` → `user_id`. **Nullable** (C-5): если резолв не удался (событие раньше связки `rc_app_user_id`↔`user_id`) — строка аудита всё равно пишется с `user_id=null`, резолв best-effort. `ON DELETE SET NULL` (аудит переживает удаление аккаунта)|
 |`event_type` |text           |`initial_purchase` / `renewal` / `trial_started` / `cancellation` / `expiration` / `billing_issue`  |
 |`platform`   |text           |`app_store` / `google_play` (store из события RevenueCat)                                            |
 |`product_id` |text           |идентификатор продукта (`super_monthly`, …)                                                          |
@@ -226,6 +237,7 @@
   "courses_per_level": 5,
   "streak_freeze_cost_per_day": 150,
   "mascot_tone_reaction_enabled": false,
+  "reading_tts_enabled": false,
   "trial_offer": {
     "trial_enabled": true,
     "trial_days": 7,
@@ -244,6 +256,7 @@
 - `streak_freeze_cost_per_day` (дефолт **150**) — сколько алмазов сервер **автоматически списывает** за каждый пропущенный день, чтобы сохранить стрик (магазина заморозок нет; §A5).
 - `battery_*` — модель монетизации батареи; полная механика и восстановление — **§A4** (канон). Кратко: старт = `battery_max`; любой тест-ответ −`battery_cost_per_answer`; восстановление по `battery_refill_minutes`; подписчик не тратит. **Бонуса заряда за завершение урока нет** (награда за урок — только алмазы; §A4/§12.6).
 - `mascot_tone_reaction_enabled` (дефолт `false`) — тумблер реакции маскота по `errors_count`; полное поведение — **§12.6** (канон), счётчик пишется независимо от флага.
+- `reading_tts_enabled` (дефолт **`false`**, спящая фича, D-1) — глобальный тумблер **TTS-озвучки чтения** (`reading_text`/`reading_media`). Когда `false` — клиент аудио не запускает (даже если `audio_url` в payload заполнен); когда `true` — озвучивает сегменты. Включается из админки (B6.8), когда озвучка готова. Управляет **только** TTS чтения; эффект-звуки урока и `Sound Effects` (§12.5г) под него не попадают. Канон поведения — **§12.5а**.
 - `trial_offer` — триал и персональный таймер; семантика полей — **§A14** (канон).
 
 **`app_config` ключ `subscription_badge`** (ассет-замена батареи у подписчика)
@@ -391,20 +404,51 @@
 
 **`error_logs`** (серверные и клиентские ошибки)
 
+|Поле        |Тип                    |Примечание                                  |
+|------------|-----------------------|--------------------------------------------|
+|`id`        |uuid PK                |                                            |
+|`source`    |text not null          |`edge_function` / `rpc` / `client`          |
+|`function`  |text not null          |название функции/экрана                     |
+|`platform`  |text null              |`ios` / `android` / null (для client)       |
+|`error_code`|text null              |                                            |
+|`message`   |text not null          |                                            |
+|`payload`   |jsonb null             |входные данные вызова (без PII)             |
+|`user_id`   |uuid FK→profiles null  |`ON DELETE SET NULL` (аудит переживает удаление аккаунта)|
+|`created_at`|timestamptz            |                                            |
+
+> **RLS `error_logs`:** запись/чтение — **только сервисная роль** (Edge/RPC пишут, админка читает; с клиента недоступна).
+
+### 6.7 Индексы и ограничения целостности
+
+> Раньше в §6 не было ни одного индекса (B-1) и идемпотентность держалась на проверке-перед-вставкой без констрейнта (B-2). Закрыто здесь — это часть контракта данных, заводится в Phase 1 вместе со схемой. PK и `unique`-поля индексируются Postgres автоматически (`username`, `courses.slug`, `categories.slug`, `payment_events.event_id`, PK `user_*`-таблиц) — ниже только то, что **нужно завести дополнительно**.
+
+**Ограничение идемпотентности (критично, B-2).** Начисление алмазов за урок защищается от двойного срабатывания **на уровне БД**, а не порядком выполнения:
+
 ```sql
-create table error_logs (
-  id          uuid primary key default gen_random_uuid(),
-  source      text not null,   -- 'edge_function' | 'rpc' | 'client'
-  function    text not null,   -- название функции/экрана
-  platform    text,            -- 'ios' | 'android' | null (для client)
-  error_code  text,
-  message     text not null,
-  payload     jsonb,           -- входные данные вызова (без PII)
-  user_id     uuid references profiles(id),
-  created_at  timestamptz default now()
-);
--- RLS: запись/чтение — только сервисная роль (через админку)
+-- одна награда на (пользователь, причина, урок); перекрывает гонку двойного complete_lesson
+create unique index uq_diamond_reward_once
+  on diamond_transactions (user_id, reason, ref_id)
+  where reason in ('lesson_completion_reward', 'lesson_replay_reward');
 ```
+
+> `complete_lesson` начисляет через `insert ... on conflict do nothing` и смотрит на число вставленных строк (§8.1). При гонке вторая транзакция получает 0 строк и **не** повторяет начисление и взвешенный розыгрыш.
+
+**Индексы под горячие запросы RPC (§8):**
+
+|Индекс                                                   |Зачем (RPC)                                                       |
+|---------------------------------------------------------|------------------------------------------------------------------|
+|`courses (is_published, sort_order)`                     |ленты `get_home_feed`/`get_grid_feed`/`get_category_courses`      |
+|`courses (category_id)`                                  |`get_category_courses`, `get_catalog` (агрегат по категории)      |
+|`courses (popularity_score desc)`                        |блок Most Popular (`get_home_feed.popular`)                       |
+|`lessons (course_id, sort_order)`                        |сетка `get_course_path`; обложка первого урока (min `sort_order`) |
+|`tasks (lesson_id, sort_order)`                          |раннер; агрегат `tasks_count`                                     |
+|`user_task_attempts (user_id, task_id)`                  |`complete_lesson` (проверка/джойн по заданиям урока)              |
+|`user_lesson_progress (user_id, status)`                 |выборки активных/пройденных уроков                                |
+|`diamond_transactions (user_id, created_at desc)`        |история/баланс, лента транзакций                                  |
+|`subscriptions (rc_app_user_id)`                         |`revenuecat-webhook`/`validate-purchase` — резолв юзера           |
+|`payment_events (user_id, created_at desc)`              |аналитика выручки в админке                                       |
+
+> Список — минимум под текущие RPC §8; расширяется по мере появления новых запросов. Точные `create index` — в миграции Phase 1.
 
 -----
 
