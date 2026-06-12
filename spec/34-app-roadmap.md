@@ -14,7 +14,7 @@
 
 **Цель:** пустое приложение запускается на обеих платформах, тема настроена.
 **Задачи:** создать монорепо; Expo-проект (TypeScript, New Architecture); подключить зависимости из раздела 2; настроить `app.config.ts` (bundleId/applicationId `com.lorebinge.app`, scheme `lorebinge`, иконки/splash, associated domains/app links заготовки); `eas.json` (профили dev/preview/prod для iOS и Android); prebuild (`ios/`, `android/`); завести Supabase-проект (dev); реализовать дизайн-токены (раздел 5) + `ThemeProvider`/`useTheme`; `App.tsx` с провайдерами (SafeArea, Theme, QueryClient) + RootNavigator со `splash`.
-**Deliverables:** собираемый dev-client под **iOS-симулятор и Android-эмулятор** через EAS; тема применяется (light/dark).
+**Deliverables:** собираемый dev-client под **iOS-симулятор и Android-эмулятор** через EAS; тема применяется (**dark-only**, §32/brand.md).
 **AC:** приложение запускается на iOS-симуляторе **и** Android-эмуляторе с брендовой темой; навигация-каркас работает.
 
 ### Phase 1 — База данных и RLS

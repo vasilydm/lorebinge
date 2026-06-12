@@ -29,8 +29,11 @@
     "expo-image": "~2.x",                     // замена Coil
     "expo-video": "~2.x",                     // замена Media3/ExoPlayer (HLS)
     "expo-audio": "~1.x",                     // TTS-озвучка чтения (§12.5а) + эффект-звуки урока (§12.5г); НЕ expo-av
-    "rive-react-native": "^9.x",              // маскот (замена Rive Android)
-    "react-native-reanimated": "~4.x",        // анимации/жесты
+    "rive-react-native": "^9.x",              // рантайм subscription_badge (.riv); маскот/splash Rive — пост-MVP (§12.6)
+    "phosphor-react-native": "^3.x",          // служебные иконки (вес Bold); замена Lucide (§5.4)
+    "react-native-svg": "^15.x",              // зависимость phosphor + гемификация-иконки + аним. SVG-батарея (§12.0)
+    "react-native-svg-transformer": "^1.x",   // импорт .svg как компонентов (metro), fill=currentColor
+    "react-native-reanimated": "~4.x",        // анимации/жесты + аним. заливка батареи
     "react-native-gesture-handler": "~2.x",
     "expo-sqlite": "~16.x",                   // замена Room (кэш)
     "react-native-mmkv": "^3.x",              // замена DataStore (key-value)
@@ -93,7 +96,7 @@
 
 - **Единица траты:** −`battery_cost_per_answer` (=1) за **каждый ответ** в задании-тесте (`requires_check=true`) — **и верный, и неверный**. Задания без проверки (`video`, `reading_text`, `reading_media`) батарею не тратят.
 - **Никакого бонуса заряда за завершение урока (Gap #6).** Экономика плоская: только трата за каждый ответ + восстановление по времени. **Награда за урок — только алмазы** (взвешенный рандом, §A6), отражаются в HUD. Поле `battery_reward_per_lesson` **удалено** из конфига; `complete_lesson` заряд не доначисляет; на экране Reward заряд **не показывается** (§12.6). Это усиливает точку монетизации: завершив урок, пользователь не получает «добавки» заряда — следующий урок упрётся в paywall тем быстрее.
-- **Стартовое значение:** `battery = battery_max = 10` при регистрации (полная) — ровно на один урок из ~10 тест-заданий. Второго урока подряд бесплатно не хватает (это и есть точка монетизации).
+- **Стартовое значение:** `battery = battery_max = 10` при регистрации (полная) — ровно на один урок из ~10 тест-заданий. **Сдвиг точки монетизации онбордингом ([35-onboarding.md §7](35-onboarding.md)):** при `economy.first_lesson_free=true` (дефолт) **первый** урок не списывает батарею (предохранитель `profiles.first_lesson_free_used`), поэтому после него заряд остаётся полным → второй урок проходится по обычным правилам, а стена пейволла встречает на **~3-м** уроке (после прожитой полной петли). При `first_lesson_free=false` поведение исходное — стена на 2-м уроке. Флаг переключается из админки без релиза.
 - **Восстановление — “ленивое” (lazy), по факту обращения, не cron:**
   - Восстановление выполняется в `refresh_user_state` (бывш. `refill_battery`, §8.1/КРИТ-8), который вызывается при: открытии приложения (cold start), открытии Home, попытке начать тест. Та же функция лениво переоценивает стрик (§A5).
   - Формула: `ticks = floor((now − last_battery_refill_at) / battery_refill_minutes)`; `new_battery = min(battery_max, battery + ticks * battery_refill_amount)`; если `ticks > 0` → `last_battery_refill_at += ticks * battery_refill_minutes` (не `now`, чтобы не терять остаток времени).

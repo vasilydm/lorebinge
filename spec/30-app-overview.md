@@ -25,7 +25,7 @@
 |Платформа         |**React Native + Expo** (managed + prebuild/CNG), **TypeScript**                    |iOS **15.1+** (SDK 55) / **16+** (SDK 56); Android **minSdk 24**, target — последний |
 |Сборка/CI         |**EAS Build** (iOS `.ipa` + Android `.aab`) + EAS Submit                            |один пайплайн на обе платформы; New Architecture обязателен (SDK 55+)                |
 |Язык              |TypeScript (strict)                                                                 |идентификаторы — английский                                                          |
-|UI                |**React Native Reusables** (shadcn для RN) поверх **NativeWind** + иконки **Lucide**|см. §5; готовый UI-кит, палитра через tweakcn (`global.css`), без хардкода стилей    |
+|UI                |**React Native Reusables** (shadcn для RN) поверх **NativeWind** + иконки **Phosphor** (`Bold`); гемификация — кастомные SVG|см. §5; готовый UI-кит, палитра через tweakcn (`global.css`), без хардкода стилей    |
 |Архитектура       |Компоненты + хуки; feature-based; «UI → data» через хуки-репозитории                |аналог MVVM: `Screen` (компонент) + `useXxxScreen()` (хук-«VM») + `UiState` (тип)    |
 |Навигация         |**React Navigation v7** (native-stack + bottom-tabs)                                |+ deep links (custom scheme) + Universal Links (iOS) / App Links (Android)           |
 |Диплинки/атрибуция|**Linkrunner** (`@linkrunner/react-native`)                                          |Единый вход из соц-сетей: установлено → курс сразу; не установлено → стор → установка → курс (deferred deep link). Fallback — собственное решение.|
@@ -36,7 +36,7 @@
 |Локальный кэш     |**MMKV** (`react-native-mmkv`) — настройки/флаги; **expo-sqlite** — кэш контента    |MMKV ⟵ DataStore; SQLite ⟵ Room                                                      |
 |Сессия/секреты    |**expo-secure-store** (Keychain/Keystore)                                           |токены сессии Supabase хранятся шифрованно                                           |
 |Картинки          |**expo-image**                                                                      |кэш, placeholder, blurhash; ⟵ Coil                                                   |
-|Анимации/жесты    |**rive-react-native** (маскот, splash) + **Reanimated** + **Gesture Handler**       |Rive — кросс-платформенный рантайм; жесты — свайп-чтение, drag timeline, scrub видео; версия Reanimated — A1 |
+|Анимации/жесты    |**Reanimated** + **Gesture Handler** + **react-native-svg** (гемификация-иконки, аним. батарея); **rive-react-native** — рантайм для `subscription_badge`-ассета (.riv) и **пост-MVP** маскота/сплэша |MVP: маскот/splash — статичный портрет (`expo-image`), HUD-иконки — SVG (батарея анимир. через Reanimated, §12.0); Rive-анимации маскота/сплэша — пост-MVP. Жесты — свайп-чтение, drag timeline, scrub видео; версия Reanimated — A1 |
 |Видео             |**expo-video** (HLS)                                                                |AVPlayer (iOS) / ExoPlayer (Android) под капотом; ⟵ Media3                           |
 |Аудио             |**expo-audio**                                                                      |TTS-озвучка чтения (§12.5а, спящая фича `reading_tts_enabled`) + эффект-звуки урока (§12.5г). `expo-av` не используем (задепрекейчен)|
 |Виджеты           |**WidgetKit (iOS)** + **Glance (Android)**                                          |нативные таргеты через prebuild/config-plugin; единый JS-мост данных                 |

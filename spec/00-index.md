@@ -30,11 +30,15 @@
 | [10-data-model.md](10-data-model.md) | Схема БД + RLS — единый контракт данных | §6, §7 |
 | [11-backend-api.md](11-backend-api.md) | RPC-функции + Edge Functions | §8 |
 | [20-design-system.md](20-design-system.md) | Дизайн-система (общая: app + admin + approver) | §5 |
+| [21-brand.md](21-brand.md) | Бренд-фундамент: тон, маскот-Распутин, палитра, типографика, иконки, motion — питает §5 | **новый** |
+| [22-motion.md](22-motion.md) | Язык движения: токены, микро-интеракции, HUD/урок/вердикты, haptics — расширяет [21 §7](21-brand.md) | **новый** |
 | [30-app-overview.md](30-app-overview.md) | Обзор, стек, архитектура, структура репо | §1–§4 |
 | [31-app-screens-features.md](31-app-screens-features.md) | Модели, навигация, server-driven UI, экраны, фичи + AC | §9–§13 |
 | [32-app-nonfunctional.md](32-app-nonfunctional.md) | NFR, обработка ошибок, вне MVP | §15–§17 |
 | [33-app-implementation.md](33-app-implementation.md) | Версии, секреты, механики, биллинг, DoD | Прил. A |
 | [34-app-roadmap.md](34-app-roadmap.md) | Фазы разработки приложения (Phase 0–16) | §14 |
+| [35-onboarding.md](35-onboarding.md) | Онбординг «Посвящение»: интро + бесплатный первый урок + JIT-споты (уточняет §12.1/§12.2, новый §12.x) | **новый** |
+| [36-course-path.md](36-course-path.md) | Course Path «Расклад»: змейка-карты, рубашка/флип/печать — **заменяет раскладку §12.4** | **новый** |
 | [40-admin.md](40-admin.md) | Админ-панель целиком + B-Phase 1–7 | Прил. B |
 | [50-approval-dashboard.md](50-approval-dashboard.md) | Дашборд очереди апрувов + D-Phase 1–3 | Прил. D |
 | [60-pipeline.md](60-pipeline.md) | Контент-конвейер целиком (отдельный подпроект) | Прил. C |
@@ -43,6 +47,14 @@
 > отдельный новый файл: конвейер уже описан в существующем
 > [`60-pipeline.md`](60-pipeline.md) — он и есть источник истины по
 > этому подпроекту. Версия Приложения C внутри `spec-rn9.md` остаётся только в архиве.
+
+> **Новые дизайн-документы (не из архива).** Файлы [21-brand.md](21-brand.md),
+> [22-motion.md](22-motion.md), [35-onboarding.md](35-onboarding.md),
+> [36-course-path.md](36-course-path.md) — **новый канон**, написанный после ревизии
+> ([`../design-review.md`](../design-review.md)); в архиве `spec-rn9.md` их нет. Они **уточняют и
+> местами заменяют** разделы §5/§12: где старый текст §12.4 (раскладка Course Path), §12.0 (HUD-motion),
+> §12.1/§12.2 (онбординг) расходится с ними — **источник истины — эти файлы** (противоречащие условия
+> в §-файлах сняты). У них нет §-нумерации исходника; ссылки на них — по имени файла/разделу.
 
 ### Граф зависимостей
 
@@ -54,11 +66,15 @@ graph TD
     DM[10 · data-model<br/>§6 схема + §7 RLS]
     API[11 · backend-api<br/>§8 RPC + Edge]
     DS[20 · design-system<br/>§5]
+    BRAND[21 · brand<br/>новый]
+    MOT[22 · motion<br/>новый]
     OV[30 · app-overview<br/>§1–§4]
     SCR[31 · app-screens-features<br/>§9–§13]
     NFR[32 · app-nonfunctional<br/>§15–§17]
     IMPL[33 · app-implementation<br/>Прил. A]
     ROAD[34 · app-roadmap<br/>§14]
+    ONB[35 · onboarding<br/>новый]
+    CP[36 · course-path<br/>новый]
     ADM[40 · admin<br/>Прил. B]
     APPR[50 · approval-dashboard<br/>Прил. D]
     PIPE[60-pipeline<br/>Прил. C]
@@ -68,13 +84,21 @@ graph TD
     DM --> ADM
     DM --> PIPE
     API --> SCR
+    BRAND --> DS
+    BRAND --> MOT
     DS --> SCR
     DS --> ADM
     DS --> APPR
+    BRAND --> SCR
+    MOT --> SCR
     OV --> SCR
     IMPL --> SCR
     IMPL --> ROAD
     SCR --> ROAD
+    SCR --> CP
+    SCR --> ONB
+    MOT --> CP
+    MOT --> ONB
     ADM --> APPR
     PIPE --> APPR
 ```
@@ -83,12 +107,16 @@ graph TD
 
 - **10 · data-model** — фундамент; зависит ни от чего, нужен всем.
 - **11 · backend-api** ← 10 (RPC и Edge оперируют таблицами §6).
-- **20 · design-system** — независим; общий для приложения, админки и апрувера.
+- **20 · design-system** — токены/кит; реализует бренд (21) и motion (22) в коде.
+- **21 · brand** *(новый)* — бренд-фундамент (тон, маскот, палитра, типографика, иконки, motion-основа); питает 20 и сквозной канон 31.
+- **22 · motion** *(новый)* ← 21 (расширяет §7 brand до полного каталога движения); канон для 31/35/36.
 - **30 · app-overview** — вводный контекст (стек/архитектура/структура).
-- **31 · app-screens-features** ← 10, 11, 20, 30 (плюс уточнения механик из 33).
+- **31 · app-screens-features** ← 10, 11, 20, 21, 22, 30 (плюс уточнения механик из 33).
 - **32 · app-nonfunctional** — сквозные требования к приложению.
 - **33 · app-implementation** (Прил. A) — уточняет механики (батарея/стрик/алмазы/биллинг) для 31 и 34.
 - **34 · app-roadmap** (§14) — фазы; Phase 1 = схема БД (10), фичи F1–F13 раскрыты в 31 (F14 Quests убрана — квесты вырезаны из проекта; Phase 11 пуста).
+- **35 · onboarding** *(новый)* ← 21, 22, 31, 33 — флоу первого запуска («Посвящение»): интро-экраны + бесплатный первый урок + JIT-споты; уточняет §12.1/§12.2, добавляет новый §12.x.
+- **36 · course-path** *(новый)* ← 21, 22, 31 — концепция «Расклад» (змейка-карты, рубашка/флип/печать); **заменяет раскладку §12.4** (роут/данные/состояния — те же).
 - **40 · admin** (Прил. B) ← 10 (читает/пишет `public.*` + `pipeline.*`), 20.
 - **50 · approval-dashboard** (Прил. D) — раздел внутри админки (40); оркестрирует апрувы конвейера (Прил. C / 60-pipeline).
 - **60-pipeline** (Прил. C) ← 10 (контракт — поля §6, импорт идемпотентно по `slug`).
@@ -101,6 +129,10 @@ graph TD
 |---|---|
 | §1, §2, §3, §4 | [30-app-overview.md](30-app-overview.md) |
 | §5 | [20-design-system.md](20-design-system.md) |
+| «brand …», «бренд §N», маскот/палитра/тон | [21-brand.md](21-brand.md) |
+| «motion …», motion-токены, хореография анимаций | [22-motion.md](22-motion.md) |
+| онбординг, «Посвящение», первый бесплатный урок, JIT-споты | [35-onboarding.md](35-onboarding.md) |
+| Course Path детально, «Расклад», рубашка/флип/печать (замена §12.4-раскладки) | [36-course-path.md](36-course-path.md) |
 | §6, §7 | [10-data-model.md](10-data-model.md) |
 | §8 (в т.ч. «раздел 8.1») | [11-backend-api.md](11-backend-api.md) |
 | §9, §10, §11, §12, §13 | [31-app-screens-features.md](31-app-screens-features.md) |

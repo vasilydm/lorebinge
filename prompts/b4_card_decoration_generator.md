@@ -1,4 +1,9 @@
-# B4 — "CARD CORNER DECORATION PROMPT GENERATOR" (Lorebinge)
+# B4 — "CARD CORNER DECORATION PROMPT GENERATOR" (Lorebinge) — ⚠️ RETIRED
+
+> **РЕТИРОВАН (ревью #10/#11).** Карточка Lore разрежена до трёх элементов (логотип · пилюля ·
+> заголовок); угловой декор больше не рендерится, а поле `courses.card_decoration_url` удалено из
+> схемы (см. `spec/10-data-model.md`, `spec/31-app-screens-features.md` §12.3а, `spec/60-pipeline.md` B4).
+> Этот генератор **не запускается**. Файл сохранён только как исторический справочник.
 
 > Bottom-layer generator. Produces the Leonardo image prompt for the small decorative
 > object that sits in the **bottom-right corner** of a course card (over the card's color
